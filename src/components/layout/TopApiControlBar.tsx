@@ -7,8 +7,9 @@ import {
   EyeOff,
   KeyRound,
   Lock,
+  Settings2,
   ShieldCheck,
-  Sparkles,
+  X,
 } from 'lucide-react';
 import { useDiagnosisStore } from '@/store/useDiagnosisStore';
 import { GeminiModelOption } from '@/types/cdss';
@@ -21,6 +22,7 @@ const MODEL_OPTIONS: Array<{ value: GeminiModelOption; label: string }> = [
 
 export function TopApiControlBar() {
   const { apiSettings, updateApiSettings } = useDiagnosisStore();
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [showKeyPlain, setShowKeyPlain] = useState(false);
 
   // 初始化時從 sessionStorage 或 localStorage 載入已保存的 API 設定
@@ -52,139 +54,200 @@ export function TopApiControlBar() {
   const statusConfig = !apiSettings.enabled
     ? {
         dotClass: 'bg-emerald-400 shadow-[0_0_8px_#34d399]',
-        badgeClass:
-          'bg-emerald-950/70 text-emerald-300 border-emerald-500/40',
-        label: '使用環境預設（內建西醫確定性引擎 ＋ 真實 PubMed API）',
+        textClass: 'text-emerald-300',
+        label: '基礎規則模式（內建西醫引擎＋PubMed）',
       }
     : hasValidKey
     ? {
         dotClass: 'bg-cyan-400 shadow-[0_0_8px_#22d3ee]',
-        badgeClass: 'bg-cyan-950/80 text-cyan-200 border-cyan-400/50',
-        label: `已啟用自訂 API Key（${apiSettings.modelId}）`,
+        textClass: 'text-cyan-200',
+        label: `已連線 Gemini API（${apiSettings.modelId}）`,
       }
     : {
         dotClass: 'bg-amber-400 shadow-[0_0_8px_#fbbf24]',
-        badgeClass: 'bg-amber-950/70 text-amber-300 border-amber-500/40',
-        label: '未完成設定（請輸入 Gemini API Key，否則自動使用內建引擎）',
+        textClass: 'text-amber-300',
+        label: '未輸入 API Key（將自動降級基礎規則模式）',
       };
 
   return (
-    <div className="w-full rounded-2xl border border-slate-800 bg-slate-900/95 px-4 py-2.5 shadow-lg">
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-        {/* 左側：連線狀態燈號 + 開關 Toggle */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <KeyRound className="h-4 w-4 text-cyan-400 shrink-0" />
-            <span className="text-xs font-extrabold text-slate-100">
-              AI 鑑別引擎連線設定
-            </span>
-          </div>
-
-          {/* 連線狀態燈號 */}
-          <div
-            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-bold ${statusConfig.badgeClass}`}
+    <>
+      {/* 單行精簡狀態列 */}
+      <div className="w-full rounded-xl border border-slate-800/90 bg-slate-900/90 px-3 sm:px-4 py-2 shadow-md flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            className={`h-2 w-2 rounded-full shrink-0 ${statusConfig.dotClass}`}
+          />
+          <span
+            className={`text-[11px] sm:text-xs font-bold truncate ${statusConfig.textClass}`}
           >
-            <span className={`h-2 w-2 rounded-full ${statusConfig.dotClass}`} />
-            <span>{statusConfig.label}</span>
-          </div>
-
-          {/* 啟用自訂 API Key Toggle */}
-          <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={apiSettings.enabled}
-              onChange={(e) =>
-                updateApiSettings({ enabled: e.target.checked })
-              }
-              className="sr-only peer"
-            />
-            <div className="relative w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500 peer-checked:after:bg-slate-950" />
-            <span className="text-xs font-semibold text-slate-300">
-              啟用自訂 Gemini API Key
-            </span>
-          </label>
+            {statusConfig.label}
+          </span>
         </div>
 
-        {/* 右側：API Key 遮罩輸入框 + 模型選擇 + Session/LocalStorage 記憶選項 */}
-        {apiSettings.enabled ? (
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* 模型選擇 */}
-            <div className="flex items-center gap-1.5">
-              <Cpu className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-              <select
-                value={apiSettings.modelId}
-                onChange={(e) =>
-                  updateApiSettings({
-                    modelId: e.target.value as GeminiModelOption,
-                  })
-                }
-                className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
-              >
-                {MODEL_OPTIONS.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+        <button
+          type="button"
+          onClick={() => setIsModalOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950/90 hover:bg-slate-800 hover:border-cyan-500/50 px-2.5 py-1 text-[11px] font-bold text-slate-200 shrink-0 transition-colors"
+        >
+          <Settings2 className="h-3.5 w-3.5 text-cyan-400" />
+          <span>設定 API Key</span>
+        </button>
+      </div>
 
-            {/* 密碼遮罩輸入框 */}
-            <div className="relative flex-1 min-w-[210px] sm:min-w-[250px]">
-              <input
-                type={showKeyPlain ? 'text' : 'password'}
-                value={apiSettings.apiKey}
-                onChange={(e) =>
-                  updateApiSettings({ apiKey: e.target.value })
-                }
-                placeholder="輸入 Gemini API Key (AIza...)"
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 pl-3 pr-8 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none font-mono"
-              />
+      {/* API Key 設定 Modal 彈窗 */}
+      {isModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4"
+          onClick={() => setIsModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <KeyRound className="h-4 w-4 text-cyan-400" />
+                <h3 className="text-sm font-extrabold text-white">
+                  AI 鑑別引擎連線設定
+                </h3>
+              </div>
               <button
                 type="button"
-                onClick={() => setShowKeyPlain((p) => !p)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
-                title={showKeyPlain ? '隱藏金鑰' : '顯示金鑰'}
+                onClick={() => setIsModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+                aria-label="關閉設定視窗"
               >
-                {showKeyPlain ? (
-                  <EyeOff className="h-3.5 w-3.5" />
-                ) : (
-                  <Eye className="h-3.5 w-3.5" />
-                )}
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            {/* SessionStorage 預設 + 可勾選記住於 LocalStorage */}
-            <label
-              className="inline-flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer select-none bg-slate-950/80 border border-slate-800 px-2.5 py-1.5 rounded-lg"
-              title="預設暫存於 sessionStorage（重新整理不遺失，關閉分頁即清除）；勾選後可長期保存於瀏覽器 localStorage，絕不傳送至第三方伺服器資料庫"
-            >
+            {/* 狀態提示 */}
+            <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs">
+              <span
+                className={`h-2 w-2 rounded-full shrink-0 ${statusConfig.dotClass}`}
+              />
+              <span className={`font-semibold ${statusConfig.textClass}`}>
+                目前狀態：{statusConfig.label}
+              </span>
+            </div>
+
+            {/* 啟用 Toggle */}
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 cursor-pointer select-none">
+              <div>
+                <div className="text-xs font-bold text-slate-100">
+                  啟用自訂 Gemini API Key
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  開啟後可搭配 AI 進行深度病生理白話生成與動態追問
+                </div>
+              </div>
               <input
                 type="checkbox"
-                checked={apiSettings.rememberInLocalStorage}
+                checked={apiSettings.enabled}
                 onChange={(e) =>
-                  updateApiSettings({
-                    rememberInLocalStorage: e.target.checked,
-                  })
+                  updateApiSettings({ enabled: e.target.checked })
                 }
-                className="rounded border-slate-700 bg-slate-900 accent-cyan-400"
+                className="sr-only peer"
               />
-              <Lock className="h-3 w-3 text-cyan-400 shrink-0" />
-              <span>
-                {apiSettings.rememberInLocalStorage
-                  ? '已記住於 localStorage'
-                  : '僅暫存於 sessionStorage'}
-              </span>
+              <div className="relative w-10 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500 peer-checked:after:bg-slate-950 shrink-0" />
             </label>
+
+            {apiSettings.enabled ? (
+              <div className="space-y-3">
+                {/* 模型選擇 */}
+                <div className="space-y-1">
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-300">
+                    <Cpu className="h-3.5 w-3.5 text-cyan-400" />
+                    選擇推理模型
+                  </label>
+                  <select
+                    value={apiSettings.modelId}
+                    onChange={(e) =>
+                      updateApiSettings({
+                        modelId: e.target.value as GeminiModelOption,
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 focus:border-cyan-500 focus:outline-none"
+                  >
+                    {MODEL_OPTIONS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 密碼遮罩輸入框 */}
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-300 block">
+                    Gemini API Key
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showKeyPlain ? 'text' : 'password'}
+                      value={apiSettings.apiKey}
+                      onChange={(e) =>
+                        updateApiSettings({ apiKey: e.target.value })
+                      }
+                      placeholder="輸入 Gemini API Key (AIza...)"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 pl-3 pr-9 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKeyPlain((p) => !p)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                      title={showKeyPlain ? '隱藏金鑰' : '顯示金鑰'}
+                    >
+                      {showKeyPlain ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* SessionStorage / LocalStorage 記憶選項 */}
+                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none bg-slate-950/70 border border-slate-800 px-3 py-2 rounded-xl">
+                  <input
+                    type="checkbox"
+                    checked={apiSettings.rememberInLocalStorage}
+                    onChange={(e) =>
+                      updateApiSettings({
+                        rememberInLocalStorage: e.target.checked,
+                      })
+                    }
+                    className="rounded border-slate-700 bg-slate-900 accent-cyan-400"
+                  />
+                  <Lock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                  <span>
+                    {apiSettings.rememberInLocalStorage
+                      ? '已勾選：長期記住於瀏覽器 localStorage（不傳送至伺服器）'
+                      : '預設：僅暫存於 sessionStorage（關閉分頁即清除）'}
+                  </span>
+                </label>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2 rounded-xl border border-emerald-500/30 bg-emerald-950/30 p-3 text-xs text-emerald-200 leading-relaxed">
+                <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                <span>
+                  免金鑰即可完整執行現代實證西醫多專科疾病鑑別與 NCBI PubMed 真實文獻檢索。
+                </span>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-extrabold transition-colors"
+              >
+                完成設定
+              </button>
+            </div>
           </div>
-        ) : (
-          <div className="flex items-center gap-2 text-[11px] text-slate-400">
-            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-            <span>
-              免金鑰即可完整執行多專科疾病鑑別與 NCBI PubMed 檢索；如需 AI 深度病生理白話生成，可隨時開啟上方開關填入個人金鑰。
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </>
   );
 }

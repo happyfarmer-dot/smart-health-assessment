@@ -26,9 +26,9 @@ let cachedGlbFound = false;
 function createFresnelRimShaderMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
-      uRimColor: { value: new THREE.Color('#38bdf8') },
-      uRimPower: { value: 3.0 },
-      uRimIntensity: { value: 0.68 },
+      uRimColor: { value: new THREE.Color('#22d3ee') },
+      uRimPower: { value: 2.35 },
+      uRimIntensity: { value: 1.1 },
     },
     vertexShader: `
       varying vec3 vNormalView;
@@ -49,8 +49,8 @@ function createFresnelRimShaderMaterial(): THREE.ShaderMaterial {
       void main() {
         float ndotv = max(dot(normalize(vViewDir), normalize(vNormalView)), 0.0);
         float fresnel = pow(1.0 - ndotv, uRimPower);
-        vec3 col = mix(uRimColor, vec3(0.88, 0.96, 1.0), fresnel * 0.45);
-        gl_FragColor = vec4(col * fresnel * uRimIntensity, fresnel * 0.72);
+        vec3 col = mix(uRimColor, vec3(0.85, 0.97, 1.0), fresnel * 0.5);
+        gl_FragColor = vec4(col * fresnel * uRimIntensity, fresnel * 0.85);
       }
     `,
     transparent: true,
@@ -58,6 +58,12 @@ function createFresnelRimShaderMaterial(): THREE.ShaderMaterial {
     blending: THREE.AdditiveBlending,
     side: THREE.FrontSide,
   });
+}
+
+export interface ModelBoundsInfo {
+  centerY: number;
+  height: number;
+  width: number;
 }
 
 export interface ModelCalibrationParams {
@@ -69,6 +75,7 @@ export interface ModelCalibrationParams {
     progressPct: number;
     usingFallback: boolean;
   }) => void;
+  onBoundsComputed?: (bounds: ModelBoundsInfo) => void;
 }
 
 /**
@@ -221,10 +228,14 @@ function UnifiedVisualBodyMeshLayer({
                 const stdMat = mat as THREE.MeshStandardMaterial;
                 if (stdMat && ('roughness' in stdMat || 'metalness' in stdMat)) {
                   // 保留原本的 map 與 normalMap，消除塑膠油光感
-                  stdMat.roughness = Math.max(stdMat.roughness ?? 0.55, 0.58);
+                  stdMat.roughness = Math.max(stdMat.roughness ?? 0.55, 0.56);
                   stdMat.metalness = Math.min(stdMat.metalness ?? 0.08, 0.12);
-                  if (!stdMat.map && stdMat.color?.getHex() === 0xffffff) {
-                    stdMat.color = new THREE.Color('#94a3b8');
+                  if (!stdMat.map) {
+                    if (stdMat.color?.getHex() === 0xffffff) {
+                      stdMat.color = new THREE.Color('#94a3b8');
+                    }
+                    stdMat.emissive = new THREE.Color('#0c4a6e');
+                    stdMat.emissiveIntensity = 0.16;
                   }
                   stdMat.needsUpdate = true;
                 }
@@ -816,6 +827,7 @@ export function AnatomicalHumanModel3D({
   yOffset = 0,
   scaleMultiplier = 1,
   onModelStatusChange,
+  onBoundsComputed,
 }: Partial<ModelCalibrationParams>) {
   const {
     selectedRegions,
@@ -825,19 +837,40 @@ export function AnatomicalHumanModel3D({
     setHoveredRegion,
   } = useDiagnosisStore();
 
+  const rootGroupRef = useRef<THREE.Group>(null);
   const [usingFallback, setUsingFallback] = useState<boolean>(true);
   const handleModelStatusChange = useCallback<
     NonNullable<ModelCalibrationParams['onModelStatusChange']>
   >(
     (status) => {
-      if (!status.isLoading) setUsingFallback(status.usingFallback);
+      if (!status.isLoading) {
+        setUsingFallback(status.usingFallback);
+        // 延遲一個 frame 確保 primitive 或 fallback mesh 已掛載，再計算實際 THREE.Box3 邊界
+        requestAnimationFrame(() => {
+          if (rootGroupRef.current && onBoundsComputed) {
+            rootGroupRef.current.updateMatrixWorld(true);
+            const box = new THREE.Box3().setFromObject(rootGroupRef.current);
+            const size = new THREE.Vector3();
+            const center = new THREE.Vector3();
+            box.getSize(size);
+            box.getCenter(center);
+            if (size.y > 0.1) {
+              onBoundsComputed({
+                centerY: center.y,
+                height: size.y,
+                width: size.x,
+              });
+            }
+          }
+        });
+      }
       onModelStatusChange?.(status);
     },
-    [onModelStatusChange]
+    [onModelStatusChange, onBoundsComputed]
   );
 
   return (
-    <group position={[0, -0.48, 0]}>
+    <group ref={rootGroupRef} position={[0, -0.48, 0]}>
       {/* 第一層：支援外部 .glb + DRACO + 自動 Box3 正規化 + Fresnel 輪廓光外殼之單一視覺模型層 */}
       <UnifiedVisualBodyMeshLayer
         yOffset={yOffset}

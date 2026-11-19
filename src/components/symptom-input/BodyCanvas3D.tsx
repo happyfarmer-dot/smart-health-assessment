@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, ContactShadows } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
+import * as THREE from 'three';
 import {
   FlipHorizontal2,
   RotateCcw,
@@ -13,24 +14,45 @@ import {
   Sliders,
   Info,
 } from 'lucide-react';
-import { AnatomicalHumanModel3D } from './AnatomicalHumanModel3D';
+import {
+  AnatomicalHumanModel3D,
+  ModelBoundsInfo,
+} from './AnatomicalHumanModel3D';
 import { useDiagnosisStore } from '@/store/useDiagnosisStore';
 import { BODY_REGION_MAP } from '@/data/bodyRegions';
 import { BodyRegionId } from '@/types/cdss';
 
-function CameraController() {
+function CameraController({ bounds }: { bounds: ModelBoundsInfo }) {
   const { cameraOrientation, cameraResetCount } = useDiagnosisStore();
   const controlsRef = useRef<OrbitControlsImpl>(null);
-  const { camera } = useThree();
+  const { camera, size } = useThree();
 
   useEffect(() => {
-    const zPos = cameraOrientation === 'anterior' ? 7.6 : -7.6;
-    camera.position.set(0, -0.4, zPos);
+    const vFov = THREE.MathUtils.degToRad(40);
+    const aspect = Math.max(size.width / Math.max(size.height, 1), 0.45);
+    // 預留上下至少 10% 空間（總高乘以 1.25），並確保左右手臂在窄螢幕不裁切
+    const fitHeight = bounds.height * 1.25;
+    const fitWidth = bounds.width * 1.15;
+    const distV = fitHeight / 2 / Math.tan(vFov / 2);
+    const distH = fitWidth / 2 / (Math.tan(vFov / 2) * aspect);
+    const dist = Math.max(distV, distH);
+
+    const zPos = cameraOrientation === 'anterior' ? dist : -dist;
+    camera.position.set(0, bounds.centerY + 0.06, zPos);
     if (controlsRef.current) {
-      controlsRef.current.target.set(0, -0.55, 0);
+      controlsRef.current.target.set(0, bounds.centerY, 0);
       controlsRef.current.update();
     }
-  }, [cameraOrientation, cameraResetCount, camera]);
+  }, [
+    cameraOrientation,
+    cameraResetCount,
+    camera,
+    bounds.centerY,
+    bounds.height,
+    bounds.width,
+    size.width,
+    size.height,
+  ]);
 
   return (
     <OrbitControls
@@ -41,7 +63,7 @@ function CameraController() {
       enableZoom={true}
       enableRotate={true}
       minDistance={2.2}
-      maxDistance={9.5}
+      maxDistance={12}
       maxPolarAngle={Math.PI * 0.85}
       minPolarAngle={Math.PI * 0.15}
     />
@@ -93,6 +115,11 @@ export function BodyCanvas3D() {
   const [debugHitbox, setDebugHitbox] = useState(false);
   const [calibYOffset, setCalibYOffset] = useState(0);
   const [calibScale, setCalibScale] = useState(1.0);
+  const [modelBounds, setModelBounds] = useState<ModelBoundsInfo>({
+    centerY: 0.03,
+    height: 4.52,
+    width: 2.7,
+  });
   const [modelStatus, setModelStatus] = useState<{
     isLoading: boolean;
     progressPct: number;
@@ -119,24 +146,24 @@ export function BodyCanvas3D() {
     null;
 
   return (
-    <div className="relative w-full h-[540px] sm:h-[620px] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col justify-between select-none">
+    <div className="relative w-full min-h-[560px] sm:min-h-[650px] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col select-none">
       {/* 頂部控制列：正背面一鍵翻轉 + 重置視角 */}
-      <div className="relative z-10 p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <span className="px-3 py-1 rounded-full text-xs font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 backdrop-blur-md">
-            解剖視角：{isAnterior ? '正面 (Anterior)' : '背面 (Posterior)'}
+      <div className="relative z-10 px-3.5 py-2.5 sm:px-4 sm:py-3 border-b border-slate-800/70 bg-slate-950/75 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+            視角：{isAnterior ? '正面 (Anterior)' : '背面 (Posterior)'}
           </span>
-          <span className="hidden md:inline-flex items-center gap-1.5 text-[11px] text-slate-400 bg-slate-900/90 px-2.5 py-1 rounded-full border border-slate-800">
+          <span className="hidden md:inline-flex items-center gap-1.5 text-[11px] text-slate-400">
             <Hand className="w-3 h-3 text-cyan-400" />
-            拖曳旋轉・滾輪縮放・點擊部位標記深度與感受性質
+            拖曳旋轉・滾輪縮放・點擊部位標記
           </span>
         </div>
 
-        <div className="flex items-center gap-2 pointer-events-auto">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={toggleCameraOrientation}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-950/50 transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-950/50 transition-all"
           >
             <FlipHorizontal2 className="w-3.5 h-3.5" />
             <span>翻轉至{isAnterior ? '背面' : '正面'}</span>
@@ -153,9 +180,9 @@ export function BodyCanvas3D() {
         </div>
       </div>
 
-      {/* 規格 2：當網址帶有 ?debug=hitbox 時顯示的開發校準工具列（平時不顯示在一般使用者畫面上） */}
+      {/* 規格 2：當網址帶有 ?debug=hitbox 時顯示的開發校準工具列 */}
       {debugHitbox && (
-        <div className="relative z-20 mx-4 rounded-xl border border-amber-500/50 bg-slate-950/90 p-3 text-xs text-slate-200 backdrop-blur-md shadow-xl space-y-2">
+        <div className="relative z-20 mx-3 mt-2 rounded-xl border border-amber-500/50 bg-slate-950/90 p-3 text-xs text-slate-200 backdrop-blur-md shadow-xl space-y-2">
           <div className="flex items-center justify-between">
             <span className="font-extrabold text-amber-300 flex items-center gap-1.5">
               <Sliders className="w-3.5 h-3.5" />
@@ -211,86 +238,65 @@ export function BodyCanvas3D() {
         </div>
       )}
 
-      {/* 左右側別防呆標示 (病人自身視角 Laterality Safeguard) */}
-      <div className="pointer-events-none absolute inset-y-20 left-3.5 flex items-center z-10">
-        <div className="bg-slate-950/85 border border-cyan-500/30 text-cyan-200 px-3 py-2.5 rounded-xl backdrop-blur-md shadow-xl">
-          <div className="text-[10px] uppercase tracking-wider text-cyan-400 font-bold">
-            畫面左方
-          </div>
-          <div className="text-xs sm:text-sm font-black text-white mt-0.5">
-            {isAnterior ? '← 身體右側' : '← 身體左側'}
-          </div>
-          <div className="text-[10px] text-slate-400 mt-0.5">
-            {isAnterior ? '(右上腹肝膽／右下腹闌尾)' : '(背面左肩／左後腰)'}
-          </div>
+      {/* 中央獨立 3D 畫布區：確保頭頂至腳底完整置中且不被上下工具列遮擋 */}
+      <div className="relative flex-1 min-h-[380px] sm:min-h-[450px]">
+        {/* 極簡、無厚重底色的半透明單行角落標籤（絕不壓在人體模型上） */}
+        <div className="pointer-events-none absolute top-2.5 left-3 z-10 text-[11px] font-bold text-cyan-300/80">
+          {isAnterior ? '← 身體右側' : '← 身體左側'}
         </div>
-      </div>
-
-      <div className="pointer-events-none absolute inset-y-20 right-3.5 flex items-center z-10">
-        <div className="bg-slate-950/85 border border-cyan-500/30 text-cyan-200 px-3 py-2.5 rounded-xl backdrop-blur-md shadow-xl text-right">
-          <div className="text-[10px] uppercase tracking-wider text-cyan-400 font-bold">
-            畫面右方
-          </div>
-          <div className="text-xs sm:text-sm font-black text-white mt-0.5">
-            {isAnterior ? '身體左側 →' : '身體右側 →'}
-          </div>
-          <div className="text-[10px] text-slate-400 mt-0.5">
-            {isAnterior ? '(左胸心前區／左上腹／左下腹)' : '(背面右肩／右後腰)'}
-          </div>
+        <div className="pointer-events-none absolute top-2.5 right-3 z-10 text-[11px] font-bold text-cyan-300/80">
+          {isAnterior ? '身體左側 →' : '身體右側 →'}
         </div>
-      </div>
 
-      {/* 規格 1 & 6：畫布角落微小備援提示 + 最右下角 CC-BY 授權標示位 */}
-      {!modelStatus.isLoading && modelStatus.usingFallback && (
-        <div className="pointer-events-none absolute bottom-[86px] left-3.5 z-10">
-          <span className="inline-flex items-center gap-1 rounded-md bg-slate-950/75 border border-slate-800/80 px-2 py-0.5 text-[10px] text-slate-400 backdrop-blur-sm">
-            <Info className="w-3 h-3 text-cyan-400/80" />
-            尚未偵測到自訂模型 (/public/models/human_body.glb)，目前使用預設輪廓
+        {!modelStatus.isLoading && modelStatus.usingFallback && (
+          <div className="pointer-events-none absolute bottom-2 left-3 z-10">
+            <span className="inline-flex items-center gap-1 text-[10px] text-slate-400/90">
+              <Info className="w-3 h-3 text-cyan-400/80" />
+              使用預設輪廓
+            </span>
+          </div>
+        )}
+
+        <div className="pointer-events-none absolute bottom-2 right-3 z-10">
+          <span className="text-[10px] text-slate-500/80">
+            3D Model: MakeHuman base mesh (CC0)
           </span>
         </div>
-      )}
 
-      <div className="pointer-events-none absolute bottom-[86px] right-3.5 z-10">
-        <span className="rounded-md bg-slate-950/60 px-2 py-0.5 text-[10px] text-slate-500/90 backdrop-blur-sm">
-          3D Model: MakeHuman base mesh (CC0)
-        </span>
-      </div>
-
-      {/* 規格 4 & 5：三點醫學打光 (Three-Point Medical Lighting) 與 dpr={[1, 2]} 行動端效能保護 */}
-      <div className="absolute inset-0">
-        <ThreeCanvasErrorBoundary>
-          <Canvas
-            dpr={[1, 2]}
-            camera={{ position: [0, -0.4, 7.6], fov: 40 }}
-            onPointerMissed={() => setActiveRegion(null)}
-          >
-            {/* 1. 主光 (Key Light)：右前上方柔光 DirectionalLight（自然白 #f8fafc，勾勒肌肉與骨骼立體陰影） */}
+        <div className="absolute inset-0">
+          <ThreeCanvasErrorBoundary>
+            <Canvas
+              dpr={[1, 2]}
+              camera={{ position: [0, 0.03, 7.8], fov: 40 }}
+              onPointerMissed={() => setActiveRegion(null)}
+            >
+            {/* 1. 主光 (Key Light) */}
             <directionalLight
               position={[3.8, 5.2, 4.2]}
-              intensity={1.25}
+              intensity={1.3}
               color="#f8fafc"
             />
 
-            {/* 2. 補光 (Fill Light)：左前方低強度冷色調 DirectionalLight（淡青白 #bae6fd）搭配微弱 HemisphereLight */}
+            {/* 2. 補光 (Fill Light) */}
             <directionalLight
               position={[-3.6, 2.4, 3.2]}
-              intensity={0.58}
+              intensity={0.62}
               color="#bae6fd"
             />
-            <hemisphereLight args={['#e0f2fe', '#0f172a', 0.48]} />
+            <hemisphereLight args={['#e0f2fe', '#0f172a', 0.5]} />
 
-            {/* 3. 輪廓背光 (Rim / Back Light)：後方偏上方高對比 DirectionalLight 與 SpotLight（醫療青藍 #38bdf8） */}
+            {/* 3. 輪廓背光 (Rim / Back Light) */}
             <directionalLight
               position={[0, 4.2, -5.0]}
-              intensity={1.45}
+              intensity={1.6}
               color="#38bdf8"
             />
             <spotLight
               position={[0, 3.8, -4.2]}
               angle={0.55}
               penumbra={0.85}
-              intensity={1.15}
-              color="#38bdf8"
+              intensity={1.25}
+              color="#22d3ee"
             />
 
             <AnatomicalHumanModel3D
@@ -298,6 +304,7 @@ export function BodyCanvas3D() {
               yOffset={calibYOffset}
               scaleMultiplier={calibScale}
               onModelStatusChange={setModelStatus}
+              onBoundsComputed={setModelBounds}
             />
 
             <ContactShadows
@@ -308,15 +315,16 @@ export function BodyCanvas3D() {
               far={4}
               color="#0284c7"
             />
-            <CameraController />
-          </Canvas>
-        </ThreeCanvasErrorBoundary>
+            <CameraController bounds={modelBounds} />
+            </Canvas>
+          </ThreeCanvasErrorBoundary>
+        </div>
       </div>
 
-      {/* 底部腹部五分區快捷定位與解剖器官提示列 */}
-      <div className="relative z-10 p-3.5 bg-slate-950/90 border-t border-slate-800/90 backdrop-blur-md space-y-2">
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-          <span className="text-[11px] font-bold text-cyan-400 shrink-0 flex items-center gap-1">
+      {/* 底部腹部五分區快捷定位（改為 flex-wrap 自動換行，不截斷文字） */}
+      <div className="relative z-10 p-3 sm:p-3.5 bg-slate-950/90 border-t border-slate-800/90 backdrop-blur-md space-y-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-bold text-cyan-400 flex items-center gap-1 mr-1">
             <Crosshair className="w-3.5 h-3.5" />
             腹部五區精準定位：
           </span>
@@ -336,7 +344,7 @@ export function BodyCanvas3D() {
                 key={abd.id}
                 type="button"
                 onClick={() => setActiveRegion(abd.id as BodyRegionId)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold shrink-0 border transition-all ${
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
                   isSel
                     ? 'bg-rose-600 text-white border-rose-400 shadow-sm shadow-rose-950'
                     : isAct
@@ -364,13 +372,13 @@ export function BodyCanvas3D() {
           ) : (
             <div className="flex items-center gap-1.5 text-slate-400">
               <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-              <span>
-                請點選 3D 人體分區（共 32 區，含頭頸五官 8 區、乳房、腹部五區、生殖泌尿與肛門直腸），標記深度與不適性質。
+              <span className="text-[11px]">
+                點選 3D 人體分區（共 32 區），標記深度與不適性質。
               </span>
             </div>
           )}
           <span className="text-[11px] text-slate-400 shrink-0">
-            已標記部位：{Object.keys(selectedRegions).length} 區
+            已標記：{Object.keys(selectedRegions).length} 區
           </span>
         </div>
       </div>

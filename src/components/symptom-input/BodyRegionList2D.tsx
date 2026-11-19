@@ -104,18 +104,17 @@ export function BodyRegionList2D() {
   const anyGroupOpen = Object.values(expandedGroups).some(Boolean);
 
   return (
-    <div className="space-y-3">
-      <div className="bg-cyan-950/50 border border-cyan-500/30 rounded-xl p-3 text-xs text-cyan-200 flex flex-wrap items-center justify-between gap-2">
-        <span>
-          <strong>2D 快速列表模式（預設全部分類摺疊）：</strong>
-          請點選下方身體大分類展開細部部位（共 32 區，附微型解剖位置 SVG 縮圖），勾選狀態與 3D 模型<strong>完全雙向同步</strong>。
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between px-1">
+        <span className="text-[11px] font-semibold text-slate-400">
+          32 處全身解剖分區（點擊分類展開，與 3D 雙向同步）
         </span>
         <button
           type="button"
           onClick={() => toggleAllGroups(!anyGroupOpen)}
-          className="px-2.5 py-1 rounded-lg bg-slate-900 border border-cyan-500/40 text-cyan-300 hover:bg-slate-800 text-[11px] font-bold shrink-0 transition-colors"
+          className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-cyan-300 hover:bg-slate-800 text-[11px] font-bold shrink-0 transition-colors"
         >
-          {anyGroupOpen ? '全部收合分類' : '全部展開分類'}
+          {anyGroupOpen ? '全部收合' : '全部展開'}
         </button>
       </div>
 
