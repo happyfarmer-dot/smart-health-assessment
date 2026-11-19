@@ -11,14 +11,14 @@ import {
   Baby,
   CheckCircle2,
 } from 'lucide-react';
-import { useHealthStore } from '@/store/useHealthStore';
+import { useDiagnosisStore } from '@/store/useDiagnosisStore';
 import {
   AgeGroup,
   BiologicalSex,
   ChronicConditionId,
   HighRiskMedicationId,
   PregnancyPossibility,
-} from '@/types/medical';
+} from '@/types/cdss';
 
 const AGE_GROUPS: { value: AgeGroup; label: string }[] = [
   { value: '0-12', label: '0–12 歲 (兒童)' },
@@ -47,39 +47,60 @@ const CHRONIC_CONDITIONS: { id: ChronicConditionId; label: string }[] = [
   { id: 'cancer_history', label: '惡性腫瘤病史' },
 ];
 
-const HIGH_RISK_MEDS: { id: HighRiskMedicationId; label: string; warningTag?: string }[] = [
+const HIGH_RISK_MEDS: {
+  id: HighRiskMedicationId;
+  label: string;
+  iatrogenicTag: string;
+}[] = [
   {
     id: 'anticoagulants',
-    label: '抗凝血劑 / 抗血小板藥（如阿斯匹靈、保栓通、Warfarin、NOAC）',
-    warningTag: '出血高風險權重',
+    label: '抗凝血劑 / 抗血小板藥（阿斯匹靈、保栓通、Warfarin、NOAC）',
+    iatrogenicTag: '出血與黑便排查',
   },
   {
     id: 'immunosuppressants',
-    label: '免疫抑制劑 / 長期口服類固醇',
-    warningTag: '典型發燒可能被掩蓋',
+    label: '免疫抑制劑（如 Cyclosporine、Methotrexate 等）',
+    iatrogenicTag: '非典型感染排查',
+  },
+  {
+    id: 'systemic_steroids',
+    label: '類固醇（長期口服或注射）',
+    iatrogenicTag: '血糖波動與胃黏膜刺激',
+  },
+  {
+    id: 'antihypertensives',
+    label: '降血壓藥（如 ACEI / ARB / CCB / 利尿劑）',
+    iatrogenicTag: '乾咳、下肢水腫或姿勢性頭暈排查',
+  },
+  {
+    id: 'statins_lipid',
+    label: '降血脂藥（Statins 史他汀類）或紅麴保健品',
+    iatrogenicTag: '對稱性肌肉痠痛無力排查',
   },
   {
     id: 'nsaids_regular',
-    label: '近期頻繁服用消炎止痛藥 (NSAIDs)',
-    warningTag: '胃黏膜與腎功能考量',
+    label: '消炎止痛藥 (NSAIDs，如 Ibuprofen、Diclofenac)',
+    iatrogenicTag: '上腹潰瘍痛與腎負荷排查',
   },
   {
     id: 'insulin_oral_hypo',
     label: '胰島素或口服降血糖藥',
+    iatrogenicTag: '心悸冷汗手抖低血糖排查',
   },
   {
-    id: 'antihypertensives',
-    label: '固定服用降血壓藥',
+    id: 'supplements_herbal',
+    label: '常規高劑量保健品（魚油、銀杏、維生素等）',
+    iatrogenicTag: '交互作用排查',
   },
 ];
 
 export function ContextProfileCard() {
   const {
     contextProfile,
-    isProfileDrawerOpen,
+    isProfileExpanded,
     updateContextProfile,
-    setProfileDrawerOpen,
-  } = useHealthStore();
+    setProfileExpanded,
+  } = useDiagnosisStore();
 
   const toggleCondition = (id: ChronicConditionId) => {
     const exists = contextProfile.chronicConditions.includes(id);
@@ -98,45 +119,43 @@ export function ContextProfileCard() {
   };
 
   const sexLabel =
-    SEX_OPTIONS.find((s) => s.value === contextProfile.biologicalSex)?.label || '未設定';
+    SEX_OPTIONS.find((s) => s.value === contextProfile.biologicalSex)?.label ||
+    '未設定';
   const ageLabel =
-    AGE_GROUPS.find((a) => a.value === contextProfile.ageGroup)?.label || '未設定';
-
-  const hasHighRiskMeds =
-    contextProfile.highRiskMedications.includes('anticoagulants') ||
-    contextProfile.highRiskMedications.includes('immunosuppressants');
+    AGE_GROUPS.find((a) => a.value === contextProfile.ageGroup)?.label ||
+    '未設定';
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden transition-all">
-      {/* 常駐頂部摘要列 (可一鍵展開/收合) */}
+    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-lg overflow-hidden transition-all">
+      {/* 常駐頂部摘要列 */}
       <button
         type="button"
-        onClick={() => setProfileDrawerOpen(!isProfileDrawerOpen)}
-        className="w-full px-4 py-3 flex flex-wrap items-center justify-between gap-2 bg-gradient-to-r from-sky-50/90 via-white to-slate-50 hover:bg-sky-50/60 transition-colors text-left"
+        onClick={() => setProfileExpanded(!isProfileExpanded)}
+        className="w-full px-4 py-3.5 flex flex-wrap items-center justify-between gap-2 bg-slate-900 hover:bg-slate-800/70 transition-colors text-left"
       >
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="w-8 h-8 rounded-lg bg-sky-600 text-white flex items-center justify-center shadow-sm">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 flex items-center justify-center shadow-sm">
             <UserCheck className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-bold text-slate-800">
-                個人生理情境卡（Context Profile）
+              <span className="text-sm font-extrabold text-slate-100">
+                基礎生理情境卡片（Context Profile & 藥源性排查基底）
               </span>
-              <span className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+              <span className="text-[11px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
                 <CheckCircle2 className="w-3 h-3" />
-                地端自動儲存・評估自動帶入
+                LocalStorage 自動記憶
               </span>
             </div>
-            <div className="text-xs text-slate-600 mt-0.5 flex items-center gap-2 flex-wrap">
-              <span className="font-medium text-slate-800">{ageLabel}</span>
+            <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-slate-200">{ageLabel}</span>
               <span>•</span>
-              <span className="font-medium text-slate-800">{sexLabel}</span>
+              <span className="font-semibold text-slate-200">{sexLabel}</span>
               {contextProfile.biologicalSex === 'female' &&
                 contextProfile.pregnancyStatus === 'possible_or_confirmed' && (
                   <>
                     <span>•</span>
-                    <span className="text-rose-600 font-semibold bg-rose-50 px-1.5 py-0.2 rounded">
+                    <span className="text-rose-300 font-bold bg-rose-950/80 border border-rose-700/60 px-1.5 py-0.2 rounded">
                       可能或已懷孕
                     </span>
                   </>
@@ -150,24 +169,24 @@ export function ContextProfileCard() {
               </span>
               <span>•</span>
               <span>
-                固定用藥：
+                固定用藥／保健品：
                 {contextProfile.highRiskMedications.length > 0
                   ? `${contextProfile.highRiskMedications.length} 項`
                   : '無'}
               </span>
-              {hasHighRiskMeds && (
-                <span className="inline-flex items-center gap-1 text-[11px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-medium">
+              {contextProfile.highRiskMedications.length > 0 && (
+                <span className="inline-flex items-center gap-1 text-[11px] bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-medium">
                   <AlertTriangle className="w-3 h-3" />
-                  含高風險用藥權重
+                  已啟用藥源性副作用排查
                 </span>
               )}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs font-medium text-sky-700 bg-sky-100/80 px-3 py-1.5 rounded-lg">
-          <span>{isProfileDrawerOpen ? '收合情境卡' : '展開編輯情境'}</span>
-          {isProfileDrawerOpen ? (
+        <div className="flex items-center gap-1.5 text-xs font-bold text-cyan-300 bg-cyan-950/80 border border-cyan-500/30 px-3 py-1.5 rounded-xl">
+          <span>{isProfileExpanded ? '收合生理情境' : '展開設定情境與用藥'}</span>
+          {isProfileExpanded ? (
             <ChevronUp className="w-4 h-4" />
           ) : (
             <ChevronDown className="w-4 h-4" />
@@ -175,14 +194,14 @@ export function ContextProfileCard() {
         </div>
       </button>
 
-      {/* 展開後的編輯面板 */}
-      {isProfileDrawerOpen && (
-        <div className="p-4 sm:p-5 border-t border-slate-200 bg-slate-50/50 space-y-5">
+      {/* 展開後的暗黑編輯面板 */}
+      {isProfileExpanded && (
+        <div className="p-4 sm:p-5 border-t border-slate-800 bg-slate-950/60 space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* 1. 年齡區間 */}
-            <div className="bg-white p-3.5 rounded-lg border border-slate-200">
-              <label className="block text-xs font-bold text-slate-700 mb-2">
-                1. 年齡區間（選填）
+            <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800">
+              <label className="block text-xs font-bold text-slate-300 mb-2">
+                1. 年齡區間（影響疾病發生率加權）
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-1 gap-1.5">
                 {AGE_GROUPS.map((g) => (
@@ -190,10 +209,10 @@ export function ContextProfileCard() {
                     key={g.value}
                     type="button"
                     onClick={() => updateContextProfile({ ageGroup: g.value })}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium text-left transition-all border ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold text-left transition-all border ${
                       contextProfile.ageGroup === g.value
-                        ? 'bg-sky-600 text-white border-sky-600 shadow-sm'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold shadow-sm'
+                        : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
                     }`}
                   >
                     {g.label}
@@ -203,21 +222,23 @@ export function ContextProfileCard() {
             </div>
 
             {/* 2. 生理性別與懷孕可能性 */}
-            <div className="bg-white p-3.5 rounded-lg border border-slate-200 space-y-3">
+            <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-2">
-                  2. 生理性別（影響解剖與婦科／泌尿鑑別）
+                <label className="block text-xs font-bold text-slate-300 mb-2">
+                  2. 生理性別（影響解剖器官與婦科／泌尿鑑別）
                 </label>
                 <div className="grid grid-cols-3 gap-1.5">
                   {SEX_OPTIONS.map((s) => (
                     <button
                       key={s.value}
                       type="button"
-                      onClick={() => updateContextProfile({ biologicalSex: s.value })}
-                      className={`px-2.5 py-2 rounded-md text-xs font-medium text-center transition-all border ${
+                      onClick={() =>
+                        updateContextProfile({ biologicalSex: s.value })
+                      }
+                      className={`px-2.5 py-2 rounded-lg text-xs font-semibold text-center transition-all border ${
                         contextProfile.biologicalSex === s.value
-                          ? 'bg-sky-600 text-white border-sky-600 shadow-sm'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold shadow-sm'
+                          : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
                       }`}
                     >
                       {s.label}
@@ -226,17 +247,19 @@ export function ContextProfileCard() {
                 </div>
               </div>
 
-              {/* 僅在選擇「生理女性」時顯示懷孕狀態 */}
               {contextProfile.biologicalSex === 'female' && (
-                <div className="pt-2 border-t border-slate-100">
-                  <label className="flex items-center gap-1.5 text-xs font-bold text-rose-700 mb-2">
+                <div className="pt-2.5 border-t border-slate-800">
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-rose-300 mb-2">
                     <Baby className="w-3.5 h-3.5" />
                     目前是否可能懷孕或正處於孕期？
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { value: 'no', label: '無懷孕可能' },
-                      { value: 'possible_or_confirmed', label: '可能懷孕 / 已懷孕' },
+                      {
+                        value: 'possible_or_confirmed',
+                        label: '可能懷孕 / 已懷孕',
+                      },
                     ].map((opt) => (
                       <button
                         key={opt.value}
@@ -246,12 +269,12 @@ export function ContextProfileCard() {
                             pregnancyStatus: opt.value as PregnancyPossibility,
                           })
                         }
-                        className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                           contextProfile.pregnancyStatus === opt.value
                             ? opt.value === 'possible_or_confirmed'
-                              ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                              : 'bg-slate-800 text-white border-slate-800'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                              ? 'bg-rose-600 text-white border-rose-400 shadow-sm'
+                              : 'bg-slate-700 text-white border-slate-600'
+                            : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                         }`}
                       >
                         {opt.label}
@@ -262,57 +285,68 @@ export function ContextProfileCard() {
               )}
             </div>
 
-            {/* 3. 高風險與固定用藥 */}
-            <div className="bg-white p-3.5 rounded-lg border border-slate-200">
-              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-2">
-                <Pill className="w-3.5 h-3.5 text-amber-600" />
-                3. 目前固定用藥（特別標註高風險藥物）
+            {/* 3. 目前固定用藥與常規保健品 (藥源性排查) */}
+            <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-300 mb-2">
+                <Pill className="w-3.5 h-3.5 text-amber-400" />
+                3. 固定用藥與常規保健品（供後端藥源性副作用排查）
               </label>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                 {HIGH_RISK_MEDS.map((med) => {
-                  const checked = contextProfile.highRiskMedications.includes(med.id);
+                  const checked = contextProfile.highRiskMedications.includes(
+                    med.id
+                  );
                   return (
                     <button
                       key={med.id}
                       type="button"
                       onClick={() => toggleMedication(med.id)}
-                      className={`w-full p-2 rounded-md text-left text-xs border transition-all flex items-start justify-between gap-2 ${
+                      className={`w-full p-2 rounded-lg text-left text-xs border transition-all flex items-start justify-between gap-2 ${
                         checked
-                          ? 'bg-amber-50 border-amber-400 text-amber-950 font-medium'
-                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                          ? 'bg-amber-500/15 border-amber-400 text-amber-100 font-semibold'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
                       }`}
                     >
                       <span>{med.label}</span>
-                      {med.warningTag && (
-                        <span className="shrink-0 text-[10px] bg-amber-200/80 text-amber-900 px-1.5 py-0.5 rounded">
-                          {med.warningTag}
-                        </span>
-                      )}
+                      <span className="shrink-0 text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                        {med.iatrogenicTag}
+                      </span>
                     </button>
                   );
                 })}
               </div>
+              <input
+                type="text"
+                value={contextProfile.customMedicationNote || ''}
+                onChange={(e) =>
+                  updateContextProfile({ customMedicationNote: e.target.value })
+                }
+                placeholder="選填其他具體藥名或保健品（如：Lisinopril、紅麴、魚油）..."
+                className="mt-2 w-full px-3 py-1.5 text-xs bg-slate-950 border border-slate-800 rounded-lg text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-cyan-500"
+              />
             </div>
           </div>
 
           {/* 4. 重大慢性病史 */}
-          <div className="bg-white p-3.5 rounded-lg border border-slate-200">
-            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-2">
-              <HeartPulse className="w-3.5 h-3.5 text-sky-600" />
-              4. 重大慢性病史（可複選，供跨專科交叉比對）
+          <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800">
+            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-300 mb-2">
+              <HeartPulse className="w-3.5 h-3.5 text-cyan-400" />
+              4. 重大慢性病史（可複選，供多專科鑑別診斷加權）
             </label>
             <div className="flex flex-wrap gap-2">
               {CHRONIC_CONDITIONS.map((cond) => {
-                const active = contextProfile.chronicConditions.includes(cond.id);
+                const active = contextProfile.chronicConditions.includes(
+                  cond.id
+                );
                 return (
                   <button
                     key={cond.id}
                     type="button"
                     onClick={() => toggleCondition(cond.id)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
                       active
-                        ? 'bg-sky-600 text-white border-sky-600 shadow-sm'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold shadow-sm'
+                        : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
                     }`}
                   >
                     {active ? '✓ ' : '+ '}

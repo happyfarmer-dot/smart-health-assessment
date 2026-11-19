@@ -1,4 +1,4 @@
-import { BodyRegionDefinition, BodyGroupCategory } from '@/types/medical';
+import { BodyRegionDefinition, BodyGroupCategory } from '@/types/cdss';
 
 export const BODY_GROUP_LABELS: Record<BodyGroupCategory, { title: string; subtitle: string }> = {
   head_neck: {

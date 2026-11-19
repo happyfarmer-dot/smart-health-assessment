@@ -9,11 +9,16 @@ import {
 } from 'lucide-react';
 import { BODY_REGIONS, BODY_GROUP_LABELS } from '@/data/bodyRegions';
 import {
-  DEPTH_LAYER_META,
-  getSymptomsByRegion,
-} from '@/data/symptomCatalog';
-import { useHealthStore } from '@/store/useHealthStore';
-import { BodyGroupCategory, SymptomDepthLayer } from '@/types/medical';
+  DEPTH_LAYER_CONFIG,
+  DISCOMFORT_QUALITIES_CATALOG,
+  getSpecificSymptomsByRegion,
+} from '@/data/discomfortQualities';
+import { useDiagnosisStore } from '@/store/useDiagnosisStore';
+import {
+  BodyGroupCategory,
+  BodyRegionId,
+  SymptomDepthLayer,
+} from '@/types/cdss';
 
 const GROUP_ORDER: BodyGroupCategory[] = [
   'abdomen_five',
@@ -36,8 +41,9 @@ export function BodyRegionList2D() {
     activeRegionId,
     setActiveRegion,
     setRegionDepthLayer,
-    toggleRegionSymptom,
-  } = useHealthStore();
+    toggleRegionQuality,
+    toggleRegionSpecificSymptom,
+  } = useDiagnosisStore();
 
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     abdomen_five: true,
@@ -54,155 +60,190 @@ export function BodyRegionList2D() {
 
   return (
     <div className="space-y-3">
-      <div className="bg-sky-50/90 border border-sky-200 rounded-xl p-3 text-xs text-sky-900 flex items-center justify-between">
+      <div className="bg-cyan-950/50 border border-cyan-500/30 rounded-xl p-3 text-xs text-cyan-200 flex items-center justify-between">
         <span>
           <strong>2D 快速列表模式：</strong>
-          所有勾選狀態與 3D 人體模型<strong>完全雙向同步</strong>。點擊任一解剖分區即可展開勾選症狀並調整表層／深層。
+          所有部位勾選狀態與 3D 透明感應熱區<strong>完全雙向同步</strong>。點擊任一部位即可在右側開啟完整 24 項不適感受庫。
         </span>
       </div>
 
       {GROUP_ORDER.map((groupKey) => {
         const groupInfo = BODY_GROUP_LABELS[groupKey];
         const regionsInGroup = BODY_REGIONS.filter((r) => r.group === groupKey);
-        const selectedInGroupCount = regionsInGroup.filter(
-          (r) => Boolean(selectedRegions[r.id])
+        const selectedInGroupCount = regionsInGroup.filter((r) =>
+          Boolean(selectedRegions[r.id])
         ).length;
         const isGroupOpen = Boolean(expandedGroups[groupKey]);
 
         return (
           <div
             key={groupKey}
-            className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm"
+            className="bg-slate-900/95 border border-slate-800 rounded-2xl overflow-hidden shadow-lg"
           >
-            {/* 分區群組標題 */}
             <button
               type="button"
               onClick={() => toggleGroup(groupKey)}
-              className="w-full px-4 py-3 bg-slate-50/80 hover:bg-slate-100/70 flex items-center justify-between text-left transition-colors"
+              className="w-full px-4 py-3 bg-slate-950/60 hover:bg-slate-900 flex items-center justify-between text-left transition-colors"
             >
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-extrabold text-slate-800">
+                  <span className="text-sm font-extrabold text-slate-100">
                     {groupInfo.title}
                   </span>
                   {selectedInGroupCount > 0 && (
                     <span className="text-xs font-bold bg-rose-600 text-white px-2 py-0.5 rounded-full">
-                      已選 {selectedInGroupCount} 區
+                      已標記 {selectedInGroupCount} 區
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-xs text-slate-400 mt-0.5">
                   {groupInfo.subtitle}
                 </p>
               </div>
               {isGroupOpen ? (
-                <ChevronDown className="w-4 h-4 text-slate-500" />
+                <ChevronDown className="w-4 h-4 text-slate-400" />
               ) : (
                 <ChevronRight className="w-4 h-4 text-slate-500" />
               )}
             </button>
 
-            {/* 群組內的解剖區域列表 */}
             {isGroupOpen && (
-              <div className="p-3 sm:p-4 divide-y divide-slate-100 space-y-3">
+              <div className="p-3 sm:p-4 divide-y divide-slate-800/80 space-y-3">
                 {regionsInGroup.map((region) => {
-                  const sel = selectedRegions[region.id];
+                  const rId = region.id as BodyRegionId;
+                  const sel = selectedRegions[rId];
                   const isSelected = Boolean(sel);
-                  const isActive = activeRegionId === region.id;
-                  const currentDepth = sel?.depthLayer || region.defaultDepthLayer;
-                  const symptoms = getSymptomsByRegion(region.id);
+                  const isActive = activeRegionId === rId;
+                  const currentDepth =
+                    sel?.depthLayer || (region.defaultDepthLayer as SymptomDepthLayer);
+                  const specificSymptoms = getSpecificSymptomsByRegion(rId);
 
                   return (
                     <div
-                      key={region.id}
+                      key={rId}
                       className={`pt-3 first:pt-0 rounded-xl transition-all ${
                         isSelected
-                          ? 'bg-rose-50/30 p-3 border border-rose-200'
+                          ? 'bg-rose-950/25 p-3 border border-rose-500/40'
                           : isActive
-                          ? 'bg-sky-50/40 p-3 border border-sky-200'
+                          ? 'bg-cyan-950/30 p-3 border border-cyan-500/40'
                           : ''
                       }`}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <button
                           type="button"
-                          onClick={() =>
-                            setActiveRegion(isActive ? null : region.id)
-                          }
+                          onClick={() => setActiveRegion(rId)}
                           className="text-left flex items-center gap-2"
                         >
                           <span
                             className={`w-2.5 h-2.5 rounded-full ${
                               isSelected
-                                ? 'bg-rose-600'
+                                ? 'bg-rose-500'
                                 : isActive
-                                ? 'bg-sky-600'
-                                : 'bg-slate-300'
+                                ? 'bg-cyan-400'
+                                : 'bg-slate-600'
                             }`}
                           />
-                          <span className="text-xs sm:text-sm font-bold text-slate-900">
+                          <span className="text-xs sm:text-sm font-bold text-slate-100">
                             {region.nameZh}
                           </span>
-                          <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
+                          <span className="text-[11px] bg-slate-800 text-cyan-300 border border-slate-700 px-2 py-0.5 rounded">
                             {region.lateralityLabelZh}
                           </span>
                         </button>
 
-                        {/* 2D 列表內嵌深度層級快速切換器 */}
+                        {/* 深度快速切換 */}
                         <div className="flex items-center gap-1">
-                          <Layers className="w-3.5 h-3.5 text-slate-400 mr-1" />
+                          <Layers className="w-3.5 h-3.5 text-slate-500 mr-1" />
                           {DEPTH_KEYS.map((dKey) => {
-                            const meta = DEPTH_LAYER_META[dKey];
+                            const cfg = DEPTH_LAYER_CONFIG[dKey];
                             const activeDepth = currentDepth === dKey;
                             return (
                               <button
                                 key={dKey}
                                 type="button"
-                                onClick={() =>
-                                  setRegionDepthLayer(region.id, dKey)
-                                }
+                                onClick={() => setRegionDepthLayer(rId, dKey)}
                                 className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-all ${
                                   activeDepth
-                                    ? 'bg-sky-600 text-white border-sky-600'
-                                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                                    ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold'
+                                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                                 }`}
                               >
-                                {meta.shortLabelZh}
+                                {cfg.shortLabelZh}
                               </button>
                             );
                           })}
                         </div>
                       </div>
 
-                      {/* 該部位症狀按鈕列 */}
-                      <div className="mt-2.5 grid grid-cols-1 md:grid-cols-2 gap-2">
-                        {symptoms.map((sym) => {
-                          const checked =
-                            sel?.symptomIds.includes(sym.id) || false;
+                      {/* 常用疼痛性質快捷標籤 */}
+                      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[11px] text-slate-500">
+                          常見性質快選：
+                        </span>
+                        {DISCOMFORT_QUALITIES_CATALOG.slice(0, 7).map((q) => {
+                          const qChecked =
+                            sel?.qualityIds.includes(q.id) || false;
                           return (
                             <button
-                              key={sym.id}
+                              key={q.id}
                               type="button"
                               onClick={() => {
-                                setActiveRegion(region.id);
-                                toggleRegionSymptom(region.id, sym.id);
+                                setActiveRegion(rId);
+                                toggleRegionQuality(rId, q.id);
                               }}
-                              className={`p-2.5 rounded-lg border text-left text-xs transition-all flex items-start gap-2 ${
-                                checked
-                                  ? 'bg-sky-600 text-white border-sky-600 font-semibold shadow-sm'
-                                  : 'bg-slate-50/80 text-slate-700 border-slate-200 hover:bg-slate-100'
+                              className={`px-2 py-0.5 rounded-md text-[11px] border transition-all ${
+                                qChecked
+                                  ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400 font-bold'
+                                  : 'bg-slate-950/80 text-slate-400 border-slate-800 hover:border-slate-700'
                               }`}
                             >
-                              <CheckCircle2
-                                className={`w-4 h-4 shrink-0 mt-0.5 ${
-                                  checked ? 'text-white' : 'text-slate-300'
-                                }`}
-                              />
-                              <span>{sym.labelZh}</span>
+                              {q.labelZh}
                             </button>
                           );
                         })}
+                        <button
+                          type="button"
+                          onClick={() => setActiveRegion(rId)}
+                          className="text-[11px] text-cyan-400 hover:underline ml-1"
+                        >
+                          展開全部 24 項感受 →
+                        </button>
                       </div>
+
+                      {/* 該部位專屬症狀按鈕列 */}
+                      {specificSymptoms.length > 0 && (
+                        <div className="mt-2.5 grid grid-cols-1 md:grid-cols-2 gap-1.5">
+                          {specificSymptoms.map((spec) => {
+                            const checked =
+                              sel?.specificSymptomIds.includes(spec.id) || false;
+                            return (
+                              <button
+                                key={spec.id}
+                                type="button"
+                                onClick={() => {
+                                  setActiveRegion(rId);
+                                  toggleRegionSpecificSymptom(rId, spec.id);
+                                }}
+                                className={`p-2.5 rounded-lg border text-left text-xs transition-all flex items-start gap-2 ${
+                                  checked
+                                    ? 'bg-emerald-500/15 text-white border-emerald-400 font-semibold'
+                                    : 'bg-slate-950/60 text-slate-300 border-slate-800/90 hover:border-slate-700'
+                                }`}
+                              >
+                                <CheckCircle2
+                                  className={`w-4 h-4 shrink-0 mt-0.5 ${
+                                    checked
+                                      ? 'text-emerald-400'
+                                      : 'text-slate-600'
+                                  }`}
+                                />
+                                <span>{spec.labelZh}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
