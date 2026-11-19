@@ -24,10 +24,10 @@ function CameraController() {
   const { camera } = useThree();
 
   useEffect(() => {
-    const zPos = cameraOrientation === 'anterior' ? 4.35 : -4.35;
-    camera.position.set(0, 0.72, zPos);
+    const zPos = cameraOrientation === 'anterior' ? 7.6 : -7.6;
+    camera.position.set(0, -0.4, zPos);
     if (controlsRef.current) {
-      controlsRef.current.target.set(0, 0.55, 0);
+      controlsRef.current.target.set(0, -0.55, 0);
       controlsRef.current.update();
     }
   }, [cameraOrientation, cameraResetCount, camera]);
@@ -41,7 +41,7 @@ function CameraController() {
       enableZoom={true}
       enableRotate={true}
       minDistance={2.2}
-      maxDistance={6.4}
+      maxDistance={9.5}
       maxPolarAngle={Math.PI * 0.85}
       minPolarAngle={Math.PI * 0.15}
     />
@@ -252,7 +252,7 @@ export function BodyCanvas3D() {
 
       <div className="pointer-events-none absolute bottom-[86px] right-3.5 z-10">
         <span className="rounded-md bg-slate-950/60 px-2 py-0.5 text-[10px] text-slate-500/90 backdrop-blur-sm">
-          3D Model Attribution (CC-BY)
+          3D Model: MakeHuman base mesh (CC0)
         </span>
       </div>
 
@@ -261,7 +261,7 @@ export function BodyCanvas3D() {
         <ThreeCanvasErrorBoundary>
           <Canvas
             dpr={[1, 2]}
-            camera={{ position: [0, 0.72, 4.35], fov: 40 }}
+            camera={{ position: [0, -0.4, 7.6], fov: 40 }}
             onPointerMissed={() => setActiveRegion(null)}
           >
             {/* 1. 主光 (Key Light)：右前上方柔光 DirectionalLight（自然白 #f8fafc，勾勒肌肉與骨骼立體陰影） */}

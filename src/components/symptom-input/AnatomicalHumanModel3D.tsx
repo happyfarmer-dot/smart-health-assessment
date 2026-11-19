@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -223,8 +223,8 @@ function UnifiedVisualBodyMeshLayer({
                   // 保留原本的 map 與 normalMap，消除塑膠油光感
                   stdMat.roughness = Math.max(stdMat.roughness ?? 0.55, 0.58);
                   stdMat.metalness = Math.min(stdMat.metalness ?? 0.08, 0.12);
-                  if (!stdMat.map) {
-                    stdMat.color = new THREE.Color('#334155');
+                  if (!stdMat.map && stdMat.color?.getHex() === 0xffffff) {
+                    stdMat.color = new THREE.Color('#94a3b8');
                   }
                   stdMat.needsUpdate = true;
                 }
@@ -505,14 +505,97 @@ function UnifiedVisualBodyMeshLayer({
  * - 當網址帶有 `?debug=hitbox` 時，自動渲染為半透明彩色線框供對齊校準
  * - 當滑鼠懸停 (Hover) 或點選 (Selected / Active) 時，以半透明發光罩 (Glow Overlay) 高亮該解剖部位
  */
-const HITBOX_SPATIAL_COORDS: Record<
-  BodyRegionId,
-  {
-    pos: [number, number, number];
-    radii: [number, number, number];
-    rot?: [number, number, number];
-  }
-> = {
+type HitboxCoord = {
+  pos: [number, number, number];
+  radii: [number, number, number];
+  rot?: [number, number, number];
+};
+
+/**
+ * 內建 `public/models/human_body.glb`（MakeHuman hm08 基礎人體網格，CC0 1.0，A-pose）
+ * 經 Box3 正規化後（腳底 y = -1.75、頭頂 y = +2.77）實測解剖關節點所校準之 32 區熱區座標。
+ * 模型面向 +Z；解剖學右側位於 -X（觀看者左側）。
+ */
+const HITBOX_COORDS_BUNDLED_GLB: Record<BodyRegionId, HitboxCoord> = {
+  // 1. 頭頸與五官細分區 (8 區)
+  head_cranial: { pos: [0, 2.6, -0.15], radii: [0.22, 0.17, 0.26] },
+  eye_orbital: { pos: [0, 2.445, 0.1], radii: [0.15, 0.045, 0.06] },
+  ear_auditory: { pos: [0, 2.4, -0.15], radii: [0.245, 0.07, 0.08] },
+  nose_sinus: { pos: [0, 2.37, 0.13], radii: [0.06, 0.05, 0.06] },
+  oral_dental_jaw: { pos: [0, 2.25, 0.07], radii: [0.12, 0.06, 0.08] },
+  neck_throat: { pos: [0, 2.1, -0.12], radii: [0.09, 0.07, 0.07] },
+  face_sensory: { pos: [0, 2.36, 0.05], radii: [0.17, 0.1, 0.08] },
+  neck_cervical_thyroid: { pos: [0, 2.06, -0.27], radii: [0.13, 0.1, 0.12] },
+
+  // 2. 胸部、乳房與上背 (4 區)
+  chest_right: { pos: [-0.18, 1.64, -0.03], radii: [0.19, 0.2, 0.13] },
+  chest_left: { pos: [0.18, 1.64, -0.03], radii: [0.19, 0.2, 0.13] },
+  breast_mammary: { pos: [0, 1.53, 0.06], radii: [0.3, 0.1, 0.08] },
+  upper_back: { pos: [0, 1.64, -0.37], radii: [0.36, 0.26, 0.12] },
+
+  // 3. 腹部精細五分區 (5 區)
+  abd_ruq: { pos: [-0.17, 1.27, 0.0], radii: [0.16, 0.15, 0.12] },
+  abd_luq: { pos: [0.17, 1.27, 0.0], radii: [0.16, 0.15, 0.12] },
+  abd_epigastric: { pos: [0, 1.1, 0.03], radii: [0.16, 0.18, 0.12] },
+  abd_rlq: { pos: [-0.17, 0.9, 0.0], radii: [0.16, 0.16, 0.12] },
+  abd_llq: { pos: [0.17, 0.9, 0.0], radii: [0.16, 0.16, 0.12] },
+
+  // 4. 下背、骨盆與私密排泄區 (5 區)
+  lower_back: { pos: [0, 1.06, -0.38], radii: [0.31, 0.26, 0.12] },
+  pelvis_groin: { pos: [0, 0.6, -0.03], radii: [0.26, 0.12, 0.11] },
+  buttocks_hip: { pos: [0, 0.52, -0.4], radii: [0.34, 0.18, 0.13] },
+  urogenital_perineal: { pos: [0, 0.42, -0.06], radii: [0.11, 0.08, 0.09] },
+  anal_rectal: { pos: [0, 0.38, -0.3], radii: [0.11, 0.08, 0.09] },
+
+  // 5. 上肢左右區 (6 區)：A-pose 上臂約外展 40°
+  shoulder_r: { pos: [-0.47, 1.87, -0.22], radii: [0.15, 0.15, 0.15] },
+  shoulder_l: { pos: [0.47, 1.87, -0.22], radii: [0.15, 0.15, 0.15] },
+  upper_arm_elbow_r: {
+    pos: [-0.66, 1.64, -0.25],
+    radii: [0.1, 0.34, 0.11],
+    rot: [0, 0, -0.69],
+  },
+  upper_arm_elbow_l: {
+    pos: [0.66, 1.64, -0.25],
+    radii: [0.1, 0.34, 0.11],
+    rot: [0, 0, 0.69],
+  },
+  forearm_wrist_hand_r: {
+    pos: [-1.08, 1.12, -0.02],
+    radii: [0.11, 0.41, 0.2],
+    rot: [0, 0, -0.68],
+  },
+  forearm_wrist_hand_l: {
+    pos: [1.08, 1.12, -0.02],
+    radii: [0.11, 0.41, 0.2],
+    rot: [0, 0, 0.68],
+  },
+
+  // 6. 下肢左右區 (4 區)
+  thigh_knee_r: {
+    pos: [-0.36, -0.08, -0.22],
+    radii: [0.17, 0.57, 0.17],
+    rot: [0, 0, -0.11],
+  },
+  thigh_knee_l: {
+    pos: [0.36, -0.08, -0.22],
+    radii: [0.17, 0.57, 0.17],
+    rot: [0, 0, 0.11],
+  },
+  calf_ankle_foot_r: {
+    pos: [-0.52, -1.18, -0.15],
+    radii: [0.14, 0.58, 0.22],
+    rot: [0, 0, -0.16],
+  },
+  calf_ankle_foot_l: {
+    pos: [0.52, -1.18, -0.15],
+    radii: [0.14, 0.58, 0.22],
+    rot: [0, 0, 0.16],
+  },
+};
+
+/** 內建平滑備援輪廓（無 .glb 時）所對應之熱區座標 */
+const HITBOX_COORDS_FALLBACK: Record<BodyRegionId, HitboxCoord> = {
   // 1. 頭頸與五官細分區 (8 區)
   head_cranial: { pos: [0, 2.60, -0.03], radii: [0.23, 0.18, 0.23] },
   eye_orbital: { pos: [0, 2.47, 0.19], radii: [0.16, 0.055, 0.075] },
@@ -597,6 +680,7 @@ function InvisibleHitboxGlowNode({
   isHovered,
   selectedSymptomCount,
   debugHitbox,
+  usingFallback,
   onSelect,
   onHover,
 }: {
@@ -606,11 +690,14 @@ function InvisibleHitboxGlowNode({
   isHovered: boolean;
   selectedSymptomCount: number;
   debugHitbox: boolean;
+  usingFallback: boolean;
   onSelect: (id: BodyRegionId) => void;
   onHover: (id: BodyRegionId | null) => void;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const coord = HITBOX_SPATIAL_COORDS[region.id as BodyRegionId];
+  const coord = (usingFallback ? HITBOX_COORDS_FALLBACK : HITBOX_COORDS_BUNDLED_GLB)[
+    region.id as BodyRegionId
+  ];
   const isIlluminated = isSelected || isActive || isHovered || debugHitbox;
 
   useFrame(({ clock }) => {
@@ -738,13 +825,24 @@ export function AnatomicalHumanModel3D({
     setHoveredRegion,
   } = useDiagnosisStore();
 
+  const [usingFallback, setUsingFallback] = useState<boolean>(true);
+  const handleModelStatusChange = useCallback<
+    NonNullable<ModelCalibrationParams['onModelStatusChange']>
+  >(
+    (status) => {
+      if (!status.isLoading) setUsingFallback(status.usingFallback);
+      onModelStatusChange?.(status);
+    },
+    [onModelStatusChange]
+  );
+
   return (
     <group position={[0, -0.48, 0]}>
       {/* 第一層：支援外部 .glb + DRACO + 自動 Box3 正規化 + Fresnel 輪廓光外殼之單一視覺模型層 */}
       <UnifiedVisualBodyMeshLayer
         yOffset={yOffset}
         scaleMultiplier={scaleMultiplier}
-        onModelStatusChange={onModelStatusChange}
+        onModelStatusChange={handleModelStatusChange}
       />
 
       {/* 第二層：32 個獨立透明 3D 感應熱區 (Hitbox & Glow Overlay Layer) */}
@@ -765,6 +863,7 @@ export function AnatomicalHumanModel3D({
             isHovered={hoveredRegionId === rId}
             selectedSymptomCount={count}
             debugHitbox={debugHitbox}
+            usingFallback={usingFallback}
             onSelect={setActiveRegion}
             onHover={setHoveredRegion}
           />
