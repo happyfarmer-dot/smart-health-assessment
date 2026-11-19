@@ -135,12 +135,31 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
     };
 
     const res = await fetchDynamicFollowUpQuestionsIsomorphic(basePayload);
+    const normalizedQuestions = res.questions.map((q) => {
+      const hasNegative = q.options.some(
+        (o) =>
+          o.optionId === 'negative_none_or_uncertain' ||
+          o.labelZh.includes('以上特徵皆不符合')
+      );
+      if (hasNegative) return q;
+      return {
+        ...q,
+        options: [
+          ...q.options,
+          {
+            optionId: 'negative_none_or_uncertain',
+            labelZh: '以上特徵皆不符合／不確定',
+            clinicalWeightTag: 'negative_none_or_uncertain',
+          },
+        ],
+      };
+    });
     setHypothesesSummaryZh(res.clinicalContextSummaryZh);
-    setDynamicQuestions(res.questions);
+    setDynamicQuestions(normalizedQuestions);
 
     // 預選尚未作答題目的第一個或保留空白供使用者點選
     const initAnswers: Record<string, string> = {};
-    res.questions.forEach((q) => {
+    normalizedQuestions.forEach((q) => {
       if (selectedOptionMap[q.questionId]) {
         initAnswers[q.questionId] = selectedOptionMap[q.questionId];
       }

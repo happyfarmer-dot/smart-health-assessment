@@ -865,7 +865,14 @@ export function runDifferentialDiagnosisEngine(
       score += 28;
     }
 
-    // D-2 動態追問命中加權
+    // D-2 動態追問命中加權與陰性排除證據
+    const negativeAnswers =
+      payload.dynamicAnswers?.answers.filter(
+        (a) =>
+          a.clinicalWeightTag === 'negative_none_or_uncertain' ||
+          a.selectedOptionId === 'negative_none_or_uncertain'
+      ) || [];
+
     if (
       tpl.dynamicWeightTag &&
       payload.dynamicAnswers?.answers.some(
@@ -879,15 +886,25 @@ export function runDifferentialDiagnosisEngine(
       if (ans) {
         matchedSupport.push(`動態鑑別追問高度支持：「${ans.selectedOptionLabelZh}」`);
       }
+    } else if (tpl.dynamicWeightTag && negativeAnswers.length > 0) {
+      score -= 6;
     }
 
     const normalizedPct = Math.min(95, Math.max(38, score));
+    const lackingEvidence = [...tpl.typicalLackingCheckZh];
+    if (negativeAnswers.length > 0) {
+      lackingEvidence.unshift(
+        `動態追問陰性排除（${negativeAnswers.length} 題）：「以上特徵皆不符合／不確定」`
+      );
+    }
+
     return {
       tpl,
       rawScore: score,
       normalizedPct,
       matchedSupport:
         matchedSupport.length > 0 ? matchedSupport : tpl.typicalSupportZh,
+      lackingEvidence,
     };
   }).sort((a, b) => b.rawScore - a.rawScore);
 
@@ -906,7 +923,7 @@ export function runDifferentialDiagnosisEngine(
       involvedSpecialtiesTw: item.tpl.involvedSpecialtiesTw,
       clinicalReasoning: {
         supportingEvidenceZh: item.matchedSupport,
-        unsupportingOrLackingEvidenceZh: item.tpl.typicalLackingCheckZh,
+        unsupportingOrLackingEvidenceZh: item.lackingEvidence,
       },
       pathophysiologyPlainZh: item.tpl.pathophysiologyPlainZh,
       confirmatoryDiagnosticTests: item.tpl.confirmatoryTests,

@@ -1,16 +1,18 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Activity,
   Stethoscope,
   Trash2,
   ArrowRight,
+  ArrowLeft,
   Layers,
   CheckCircle2,
   ChevronUp,
   X,
+  FileText,
 } from 'lucide-react';
 import { TopApiControlBar } from '@/components/layout/TopApiControlBar';
 import { ContextProfileCard } from '@/components/layout/ContextProfileCard';
@@ -20,6 +22,7 @@ import { BodyRegionList2D } from '@/components/symptom-input/BodyRegionList2D';
 import { SystemicSymptomsAccordion } from '@/components/symptom-input/SystemicSymptomsAccordion';
 import { TwoStageFollowUpModal } from '@/components/diagnosis/TwoStageFollowUpModal';
 import { DiagnosisStreamReport } from '@/components/diagnosis/DiagnosisStreamReport';
+import { ReportExportModal } from '@/components/diagnosis/ReportExportModal';
 import { useDiagnosisStore } from '@/store/useDiagnosisStore';
 import { DEPTH_LAYER_CONFIG } from '@/data/discomfortQualities';
 import { SYSTEMIC_SYMPTOM_MAP } from '@/data/systemicSymptomsCatalog';
@@ -69,7 +72,10 @@ export default function ClinicalDiagnosisWorkbenchPage() {
   } = useDiagnosisStore();
 
   const [mounted, setMounted] = useState(false);
+  const [activeView, setActiveView] = useState<'input' | 'report'>('input');
+  const [assessedAt, setAssessedAt] = useState<string>('');
   const [isSummaryDrawerOpen, setIsSummaryDrawerOpen] = useState(false);
+  const [isReportExportOpen, setIsReportExportOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [safetyResult, setSafetyResult] = useState<SafetyCheckResult | null>(null);
   const [primaryResult, setPrimaryResult] = useState<PrimaryDiagnosisResult | null>(null);
@@ -77,7 +83,6 @@ export default function ClinicalDiagnosisWorkbenchPage() {
     useState<DifferentialAndAnalysisResult | null>(null);
   const [pubmedResult, setPubmedResult] = useState<PubMedResearchResult | null>(null);
 
-  const reportSectionRef = useRef<HTMLDivElement | null>(null);
   const desktopPanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -105,29 +110,50 @@ export default function ClinicalDiagnosisWorkbenchPage() {
       0
     ) + systemicSymptomIds.length;
 
-  const hasStartedDiagnosis =
-    isStreaming ||
-    Boolean(safetyResult) ||
-    Boolean(primaryResult) ||
-    Boolean(differentialResult) ||
-    Boolean(pubmedResult);
+  const contextSummaryZh = useMemo(() => {
+    const sex = contextProfile.biologicalSex === 'female' ? '女性' : '男性';
+    const bmiText =
+      contextProfile.heightCm && contextProfile.weightKg
+        ? `・BMI ${(
+            contextProfile.weightKg /
+            Math.pow(contextProfile.heightCm / 100, 2)
+          ).toFixed(1)}`
+        : '';
+    return `${sex}・${contextProfile.ageGroup} 歲${bmiText}・${selectedRegionList.length} 部位 / ${totalFeatureCount} 項特徵`;
+  }, [
+    contextProfile.biologicalSex,
+    contextProfile.ageGroup,
+    contextProfile.heightCm,
+    contextProfile.weightKg,
+    selectedRegionList.length,
+    totalFeatureCount,
+  ]);
 
   const handleConfirmAndStartDiagnosis = async (dynamicAnswers: {
     wasSkipped: boolean;
     answers: DynamicFollowUpAnswerItem[];
   }) => {
+    const nowLabel = new Date().toLocaleString('zh-TW', {
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    setAssessedAt(nowLabel);
+    setActiveRegion(null);
+    setIsSummaryDrawerOpen(false);
+    setActiveView('report');
     setIsStreaming(true);
     setSafetyResult(null);
     setPrimaryResult(null);
     setDifferentialResult(null);
     setPubmedResult(null);
 
-    setTimeout(() => {
-      reportSectionRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      });
-    }, 100);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
 
     const payload: DiagnosisRequestPayload = {
       contextProfile,
@@ -158,23 +184,94 @@ export default function ClinicalDiagnosisWorkbenchPage() {
     );
   };
 
+  // ==================== 獨立專屬臨床評估報告頁 (Dedicated Report View) ====================
+  if (activeView === 'report') {
+    return (
+      <>
+        {/* 頂部固定導覽列（列印時自動隱藏） */}
+        <nav className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 backdrop-blur-md no-print">
+          <div className="max-w-5xl mx-auto px-3.5 sm:px-6 py-3 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveView('input');
+                if (typeof window !== 'undefined') {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-200 transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4 text-cyan-400" />
+              <span>返回修改症狀</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsReportExportOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-sky-400 hover:from-cyan-300 hover:to-sky-300 text-slate-950 px-4 py-2 text-xs sm:text-sm font-black shadow-lg shadow-cyan-950/50 transition-all cursor-pointer"
+            >
+              <FileText className="w-4 h-4" />
+              <span>一鍵生成報告</span>
+            </button>
+          </div>
+        </nav>
+
+        <main className="max-w-5xl mx-auto px-3.5 sm:px-6 py-5 sm:py-7 space-y-5">
+          <DiagnosisStreamReport
+            isStreaming={isStreaming}
+            safetyResult={safetyResult}
+            primaryResult={primaryResult}
+            differentialResult={differentialResult}
+            pubmedResult={pubmedResult}
+            optionalGeminiKey={apiSettings.enabled ? apiSettings.apiKey : ''}
+            onChangeGeminiKey={(key) =>
+              updateApiSettings({ enabled: true, apiKey: key })
+            }
+            assessedAt={assessedAt}
+            contextSummaryZh={contextSummaryZh}
+          />
+        </main>
+
+        <ReportExportModal
+          isOpen={isReportExportOpen}
+          onClose={() => setIsReportExportOpen(false)}
+          assessedAt={assessedAt}
+          contextProfile={contextProfile}
+          regionRecords={selectedRegionList}
+          systemicSymptomIds={systemicSymptomIds}
+          followUp={followUp}
+          safetyResult={safetyResult}
+          primaryResult={primaryResult}
+          differentialResult={differentialResult}
+          pubmedResult={pubmedResult}
+        />
+      </>
+    );
+  }
+
+  // ==================== 主臨床輸入工作台 (Input Workbench View) ====================
   return (
     <>
-      <main className="max-w-7xl mx-auto px-3.5 sm:px-4 pt-3 pb-24 space-y-3">
+      <main className="max-w-7xl mx-auto px-3.5 sm:px-4 pt-3 pb-28 space-y-3.5">
         {/* 單行精簡 API 連線狀態列（點擊右側按鈕以 Modal 展開設定） */}
         <TopApiControlBar />
 
-        {/* 緊湊型 App Header（僅保留標題與一行副標） */}
-        <header className="flex items-center gap-3 bg-slate-900/90 border border-slate-800 rounded-2xl px-4 py-3 shadow-lg">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-slate-950 flex items-center justify-center shadow-md shadow-cyan-950/60 shrink-0">
-            <Stethoscope className="w-5 h-5 stroke-[2.2]" />
+        {/* 強化主標題視覺層級與識別度 */}
+        <header className="flex items-center gap-3.5 bg-gradient-to-r from-slate-900 via-slate-900 to-cyan-950/40 border border-cyan-500/30 rounded-2xl px-4 py-3.5 sm:px-5 sm:py-4 shadow-xl">
+          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 text-slate-950 flex items-center justify-center shadow-lg shadow-cyan-950/60 shrink-0">
+            <Stethoscope className="w-6 h-6 stroke-[2.3]" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-base sm:text-lg font-black text-white tracking-tight truncate">
-              3D 互動式智慧醫療疾病判斷系統
-            </h1>
-            <p className="text-[11px] sm:text-xs text-slate-400 truncate">
-              現代實證西醫・32 區解剖鑑別診斷與 NCBI PubMed 實證檢索工作台
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white">
+                3D 互動式智慧醫療疾病判斷系統
+              </h1>
+              <span className="rounded-full bg-cyan-500/15 border border-cyan-400/40 px-2.5 py-0.5 text-[11px] font-extrabold text-cyan-300">
+                現代實證西醫・多專科臨床鑑別診斷
+              </span>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-300 mt-0.5">
+              透過 3D 立體解剖定位、病灶深度與生命徵象，即時進行跨專科疾病鑑別推論與實證文獻檢索
             </p>
           </div>
         </header>
@@ -190,9 +287,9 @@ export default function ClinicalDiagnosisWorkbenchPage() {
           {/* 左側 7 欄：高輪廓 3D 人體熱區場景 或 2D 快速列表 */}
           <div className="lg:col-span-7 space-y-3">
             {!mounted ? (
-              <div className="w-full h-[540px] bg-slate-900 rounded-2xl border border-slate-800 animate-pulse" />
+              <div className="w-full h-[560px] bg-slate-900 rounded-2xl border border-slate-800 animate-pulse" />
             ) : inputMode === '3d' ? (
-              <BodyCanvas3D />
+              <BodyCanvas3D extraModalOpen={isSummaryDrawerOpen} />
             ) : (
               <BodyRegionList2D />
             )}
@@ -207,7 +304,7 @@ export default function ClinicalDiagnosisWorkbenchPage() {
             {/* 模組 C-2：7 大系統全身性症狀分類面板 */}
             <SystemicSymptomsAccordion />
 
-            {/* 桌機與頁面內建已選特徵總覽 */}
+            {/* 桌機內建已選特徵總覽 */}
             {totalSelections > 0 && (
               <div className="hidden lg:block bg-slate-900/95 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
                 <div className="flex items-center justify-between">
@@ -307,41 +404,29 @@ export default function ClinicalDiagnosisWorkbenchPage() {
           </div>
         </div>
 
-        {/* 模組 E & F：尚未執行評估前隱藏，待按下診斷後再展開渲染 */}
-        {hasStartedDiagnosis && (
-          <div ref={reportSectionRef} className="pt-2">
-            <DiagnosisStreamReport
-              isStreaming={isStreaming}
-              safetyResult={safetyResult}
-              primaryResult={primaryResult}
-              differentialResult={differentialResult}
-              pubmedResult={pubmedResult}
-              optionalGeminiKey={apiSettings.enabled ? apiSettings.apiKey : ''}
-              onChangeGeminiKey={(key) =>
-                updateApiSettings({ enabled: true, apiKey: key })
-              }
-            />
-          </div>
-        )}
-
         {/* 模組 D：兩階段臨床追問 Modal */}
         <TwoStageFollowUpModal
           onConfirmAndStartDiagnosis={handleConfirmAndStartDiagnosis}
         />
       </main>
 
-      {/* 手機版部位編輯 Bottom Sheet（點擊任一部位時由底部滑出，附「完成此部位」確認鍵） */}
+      {/* 手機版部位編輯 Bottom Sheet（點擊外部遮罩、右上角 ×、底部「完成並關閉」或按 ESC 皆可立即關閉） */}
       {activeRegionId && (
         <div
-          className="fixed inset-0 z-50 lg:hidden flex items-end bg-slate-950/75 backdrop-blur-sm"
-          onClick={() => setActiveRegion(null)}
+          className="fixed inset-0 z-50 lg:hidden flex items-end bg-slate-950/80 backdrop-blur-sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            setActiveRegion(null);
+          }}
         >
           <div
-            className="w-full max-h-[86vh] overflow-y-auto rounded-t-3xl bg-slate-900 border-t border-cyan-500/40 shadow-2xl p-3 pb-6"
+            className="w-full"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mx-auto mb-2.5 h-1.5 w-12 rounded-full bg-slate-700" />
-            <RegionQualitiesPanel onDone={() => setActiveRegion(null)} />
+            <RegionQualitiesPanel
+              isModalMode={true}
+              onDone={() => setActiveRegion(null)}
+            />
           </div>
         </div>
       )}
@@ -350,7 +435,10 @@ export default function ClinicalDiagnosisWorkbenchPage() {
       {isSummaryDrawerOpen && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 backdrop-blur-sm"
-          onClick={() => setIsSummaryDrawerOpen(false)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsSummaryDrawerOpen(false);
+          }}
         >
           <div
             className="w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-t-3xl bg-slate-900 border-t border-slate-700 p-4 pb-6 shadow-2xl space-y-3"

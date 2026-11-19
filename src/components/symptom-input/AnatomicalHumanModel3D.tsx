@@ -68,6 +68,8 @@ export interface ModelBoundsInfo {
 
 export interface ModelCalibrationParams {
   debugHitbox: boolean;
+  showRegionBoundaries: boolean;
+  hideHtmlLabels: boolean;
   yOffset: number;
   scaleMultiplier: number;
   onModelStatusChange?: (status: {
@@ -684,6 +686,11 @@ const HITBOX_COORDS_FALLBACK: Record<BodyRegionId, HitboxCoord> = {
   },
 };
 
+const SHARED_BOUNDARY_EDGES_GEO = new THREE.EdgesGeometry(
+  new THREE.SphereGeometry(1, 14, 10),
+  15
+);
+
 function InvisibleHitboxGlowNode({
   region,
   isSelected,
@@ -691,6 +698,8 @@ function InvisibleHitboxGlowNode({
   isHovered,
   selectedSymptomCount,
   debugHitbox,
+  showRegionBoundaries,
+  hideHtmlLabels,
   usingFallback,
   onSelect,
   onHover,
@@ -701,6 +710,8 @@ function InvisibleHitboxGlowNode({
   isHovered: boolean;
   selectedSymptomCount: number;
   debugHitbox: boolean;
+  showRegionBoundaries: boolean;
+  hideHtmlLabels: boolean;
   usingFallback: boolean;
   onSelect: (id: BodyRegionId) => void;
   onHover: (id: BodyRegionId | null) => void;
@@ -717,18 +728,21 @@ function InvisibleHitboxGlowNode({
     if (!mat) return;
 
     if (isSelected) {
-      const pulse = 0.65 + Math.sin(clock.getElapsedTime() * 4.0) * 0.25;
+      const pulse = 0.65 + Math.sin(clock.getElapsedTime() * 4.0) * 0.22;
       mat.emissiveIntensity = pulse;
-      mat.opacity = 0.48;
+      mat.opacity = 0.44;
     } else if (isActive) {
-      mat.emissiveIntensity = 0.72;
-      mat.opacity = 0.42;
+      mat.emissiveIntensity = 0.75;
+      mat.opacity = 0.4;
     } else if (isHovered) {
-      mat.emissiveIntensity = 0.55;
+      mat.emissiveIntensity = 0.6;
       mat.opacity = 0.34;
     } else if (debugHitbox) {
       mat.emissiveIntensity = 0.45;
       mat.opacity = 0.38;
+    } else if (showRegionBoundaries) {
+      mat.emissiveIntensity = 0.14;
+      mat.opacity = 0.085;
     } else {
       mat.emissiveIntensity = 0;
       mat.opacity = 0.015;
@@ -739,15 +753,26 @@ function InvisibleHitboxGlowNode({
     if (isSelected) return '#f43f5e';
     if (isActive) return '#22d3ee';
     if (isHovered) return '#38bdf8';
-    if (debugHitbox) return region.meshConfig.colorAccent || '#38bdf8';
+    if (debugHitbox || showRegionBoundaries) {
+      return region.meshConfig.colorAccent || '#38bdf8';
+    }
     return '#0f172a';
   }, [
     isSelected,
     isActive,
     isHovered,
     debugHitbox,
+    showRegionBoundaries,
     region.meshConfig.colorAccent,
   ]);
+
+  const outlineColor = isSelected
+    ? '#fb7185'
+    : isActive || isHovered
+    ? '#22d3ee'
+    : region.meshConfig.colorAccent || '#38bdf8';
+
+  const outlineOpacity = isSelected || isActive || isHovered ? 0.88 : 0.28;
 
   if (!coord) return null;
 
@@ -782,22 +807,45 @@ function InvisibleHitboxGlowNode({
         <meshPhysicalMaterial
           color={glowColor}
           emissive={glowColor}
-          emissiveIntensity={isIlluminated ? 0.6 : 0}
+          emissiveIntensity={isIlluminated ? 0.6 : showRegionBoundaries ? 0.14 : 0}
           roughness={0.2}
           metalness={0.1}
           transparent
-          opacity={isIlluminated ? 0.38 : 0.015}
+          opacity={
+            isIlluminated ? 0.38 : showRegionBoundaries ? 0.085 : 0.015
+          }
           depthWrite={false}
           wireframe={debugHitbox && !isSelected && !isActive && !isHovered}
         />
       </mesh>
 
-      {/* 當部位被懸停或選取時，顯示清晰暗黑玻璃解剖標籤 */}
-      {(isSelected || isActive || isHovered) && (
+      {/* 解剖分區細邊框輪廓 (EdgesGeometry Outline) */}
+      {(showRegionBoundaries || isSelected || isActive || isHovered) &&
+        !debugHitbox && (
+          <lineSegments
+            geometry={SHARED_BOUNDARY_EDGES_GEO}
+            scale={[
+              coord.radii[0] * 1.01,
+              coord.radii[1] * 1.01,
+              coord.radii[2] * 1.01,
+            ]}
+          >
+            <lineBasicMaterial
+              color={outlineColor}
+              transparent
+              opacity={outlineOpacity}
+              depthWrite={false}
+            />
+          </lineSegments>
+        )}
+
+      {/* 當部位被懸停或選取且無任何彈窗開啟時，顯示暗黑玻璃解剖標籤（強制 zIndexRange 低於彈窗） */}
+      {!hideHtmlLabels && (isSelected || isActive || isHovered) && (
         <Html
           position={[0, 0, 0.25]}
           center
           distanceFactor={5.8}
+          zIndexRange={[10, 0]}
           style={{ pointerEvents: 'none' }}
         >
           <div
@@ -824,12 +872,15 @@ function InvisibleHitboxGlowNode({
 
 export function AnatomicalHumanModel3D({
   debugHitbox = false,
+  showRegionBoundaries = true,
+  hideHtmlLabels = false,
   yOffset = 0,
   scaleMultiplier = 1,
   onModelStatusChange,
   onBoundsComputed,
 }: Partial<ModelCalibrationParams>) {
   const {
+    cameraOrientation,
     selectedRegions,
     activeRegionId,
     hoveredRegionId,
@@ -869,6 +920,16 @@ export function AnatomicalHumanModel3D({
     [onModelStatusChange, onBoundsComputed]
   );
 
+  // 前後視角過濾：正面僅顯示正面/雙向部位，背面僅顯示背面/雙向部位，避免透視干擾點擊
+  const visibleRegions = useMemo(
+    () =>
+      BODY_REGIONS.filter(
+        (r) =>
+          r.viewOrientation === 'both' || r.viewOrientation === cameraOrientation
+      ),
+    [cameraOrientation]
+  );
+
   return (
     <group ref={rootGroupRef} position={[0, -0.48, 0]}>
       {/* 第一層：支援外部 .glb + DRACO + 自動 Box3 正規化 + Fresnel 輪廓光外殼之單一視覺模型層 */}
@@ -878,8 +939,8 @@ export function AnatomicalHumanModel3D({
         onModelStatusChange={handleModelStatusChange}
       />
 
-      {/* 第二層：32 個獨立透明 3D 感應熱區 (Hitbox & Glow Overlay Layer) */}
-      {BODY_REGIONS.map((region) => {
+      {/* 第二層：依前後視角過濾之解剖感應熱區與分區邊界可視化層 */}
+      {visibleRegions.map((region) => {
         const rId = region.id as BodyRegionId;
         const record = selectedRegions[rId];
         const isSelected = Boolean(record);
@@ -896,6 +957,8 @@ export function AnatomicalHumanModel3D({
             isHovered={hoveredRegionId === rId}
             selectedSymptomCount={count}
             debugHitbox={debugHitbox}
+            showRegionBoundaries={showRegionBoundaries}
+            hideHtmlLabels={hideHtmlLabels}
             usingFallback={usingFallback}
             onSelect={setActiveRegion}
             onHover={setHoveredRegion}

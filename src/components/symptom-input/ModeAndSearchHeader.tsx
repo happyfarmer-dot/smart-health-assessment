@@ -127,13 +127,13 @@ export function ModeAndSearchHeader() {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         {/* 3D / 2D 一鍵雙向同步切換 */}
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="inline-flex p-1 rounded-xl bg-slate-950 border border-slate-800">
+          <div className="inline-flex p-1 rounded-xl bg-slate-950 border border-slate-700/90 shadow-inner">
             <button
               type="button"
               onClick={() => setInputMode('3d')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-extrabold transition-all ${
                 inputMode === '3d'
-                  ? 'bg-cyan-500 text-slate-950 shadow-md'
+                  ? 'bg-gradient-to-r from-cyan-400 to-sky-400 text-slate-950 ring-2 ring-cyan-300/60 shadow-[0_0_16px_rgba(34,211,238,0.45)]'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -145,7 +145,7 @@ export function ModeAndSearchHeader() {
               onClick={() => setInputMode('2d')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
                 inputMode === '2d'
-                  ? 'bg-cyan-500 text-slate-950 shadow-md'
+                  ? 'bg-cyan-500 text-slate-950 ring-1 ring-cyan-300/60 shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >

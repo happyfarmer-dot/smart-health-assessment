@@ -13,6 +13,8 @@ import {
   Crosshair,
   Sliders,
   Info,
+  ZoomIn,
+  Layers,
 } from 'lucide-react';
 import {
   AnatomicalHumanModel3D,
@@ -23,11 +25,22 @@ import { BODY_REGION_MAP } from '@/data/bodyRegions';
 import { BodyRegionId } from '@/types/cdss';
 
 function CameraController({ bounds }: { bounds: ModelBoundsInfo }) {
-  const { cameraOrientation, cameraResetCount } = useDiagnosisStore();
+  const { cameraOrientation, cameraFocusPreset, cameraResetCount } =
+    useDiagnosisStore();
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const { camera, size } = useThree();
 
   useEffect(() => {
+    if (cameraFocusPreset === 'head_neck') {
+      const zPos = cameraOrientation === 'anterior' ? 2.35 : -2.35;
+      camera.position.set(0, 1.88, zPos);
+      if (controlsRef.current) {
+        controlsRef.current.target.set(0, 1.82, 0);
+        controlsRef.current.update();
+      }
+      return;
+    }
+
     const vFov = THREE.MathUtils.degToRad(40);
     const aspect = Math.max(size.width / Math.max(size.height, 1), 0.45);
     // 預留上下至少 10% 空間（總高乘以 1.25），並確保左右手臂在窄螢幕不裁切
@@ -45,6 +58,7 @@ function CameraController({ bounds }: { bounds: ModelBoundsInfo }) {
     }
   }, [
     cameraOrientation,
+    cameraFocusPreset,
     cameraResetCount,
     camera,
     bounds.centerY,
@@ -100,19 +114,28 @@ class ThreeCanvasErrorBoundary extends React.Component<
   }
 }
 
-export function BodyCanvas3D() {
+export function BodyCanvas3D({
+  extraModalOpen = false,
+}: {
+  extraModalOpen?: boolean;
+}) {
   const {
     cameraOrientation,
+    cameraFocusPreset,
     toggleCameraOrientation,
+    setCameraFocusPreset,
     triggerCameraReset,
     activeRegionId,
     hoveredRegionId,
     selectedRegions,
+    isFollowUpModalOpen,
+    isApiModalOpen,
     setActiveRegion,
   } = useDiagnosisStore();
 
   // 規格 2：支援網址參數 `?debug=hitbox` 觸發熱區線框與微調滑桿（模型 Y 軸偏移與整體縮放倍率）
   const [debugHitbox, setDebugHitbox] = useState(false);
+  const [showRegionBoundaries, setShowRegionBoundaries] = useState(true);
   const [calibYOffset, setCalibYOffset] = useState(0);
   const [calibScale, setCalibScale] = useState(1.0);
   const [modelBounds, setModelBounds] = useState<ModelBoundsInfo>({
@@ -140,6 +163,10 @@ export function BodyCanvas3D() {
   }, []);
 
   const isAnterior = cameraOrientation === 'anterior';
+  const isHeadNeckZoom = cameraFocusPreset === 'head_neck';
+  const hideHtmlLabels = Boolean(
+    activeRegionId || isFollowUpModalOpen || isApiModalOpen || extraModalOpen
+  );
   const inspectRegion =
     (hoveredRegionId && BODY_REGION_MAP[hoveredRegionId]) ||
     (activeRegionId && BODY_REGION_MAP[activeRegionId]) ||
@@ -147,35 +174,65 @@ export function BodyCanvas3D() {
 
   return (
     <div className="relative w-full min-h-[560px] sm:min-h-[650px] bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col select-none">
-      {/* 頂部控制列：正背面一鍵翻轉 + 重置視角 */}
-      <div className="relative z-10 px-3.5 py-2.5 sm:px-4 sm:py-3 border-b border-slate-800/70 bg-slate-950/75 flex flex-wrap items-center justify-between gap-2">
+      {/* 頂部控制列：正背面翻轉 + 放大頭頸五官 + 分區邊界開關 + 重置視角 */}
+      <div className="relative z-10 px-3 py-2.5 sm:px-4 sm:py-3 border-b border-slate-800/70 bg-slate-950/75 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-            視角：{isAnterior ? '正面 (Anterior)' : '背面 (Posterior)'}
+            視角：{isAnterior ? '正面' : '背面'}
           </span>
-          <span className="hidden md:inline-flex items-center gap-1.5 text-[11px] text-slate-400">
+          <span className="hidden xl:inline-flex items-center gap-1.5 text-[11px] text-slate-400">
             <Hand className="w-3 h-3 text-cyan-400" />
             拖曳旋轉・滾輪縮放・點擊部位標記
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() =>
+              setCameraFocusPreset(isHeadNeckZoom ? 'full_body' : 'head_neck')
+            }
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold border transition-all ${
+              isHeadNeckZoom
+                ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-md'
+                : 'bg-slate-900/90 hover:bg-slate-800 text-cyan-200 border-cyan-500/40'
+            }`}
+            title="拉近鏡頭精準點選頭顱、眼、耳、鼻、口、喉等 8 個五官分區"
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+            <span>{isHeadNeckZoom ? '返回全身' : '放大頭頸五官'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowRegionBoundaries((prev) => !prev)}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold border transition-all ${
+              showRegionBoundaries
+                ? 'bg-cyan-950/80 text-cyan-300 border-cyan-400/60'
+                : 'bg-slate-900/90 text-slate-400 border-slate-700 hover:text-slate-200'
+            }`}
+            title="切換顯示各部位半透明分區邊界"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">分區邊界</span>
+          </button>
+
           <button
             type="button"
             onClick={toggleCameraOrientation}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-950/50 transition-all"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-950/50 transition-all"
           >
             <FlipHorizontal2 className="w-3.5 h-3.5" />
-            <span>翻轉至{isAnterior ? '背面' : '正面'}</span>
+            <span>翻轉{isAnterior ? '背面' : '正面'}</span>
           </button>
+
           <button
             type="button"
             onClick={triggerCameraReset}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-700 transition-all"
+            className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-medium bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-700 transition-all"
             title="重置 3D 視角"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">重置視角</span>
           </button>
         </div>
       </div>
@@ -301,6 +358,8 @@ export function BodyCanvas3D() {
 
             <AnatomicalHumanModel3D
               debugHitbox={debugHitbox}
+              showRegionBoundaries={showRegionBoundaries}
+              hideHtmlLabels={hideHtmlLabels}
               yOffset={calibYOffset}
               scaleMultiplier={calibScale}
               onModelStatusChange={setModelStatus}

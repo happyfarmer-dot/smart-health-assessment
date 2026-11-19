@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Layers,
   CheckSquare,
@@ -10,6 +10,7 @@ import {
   AlertCircle,
   Stethoscope,
   Check,
+  X,
 } from 'lucide-react';
 import { useDiagnosisStore } from '@/store/useDiagnosisStore';
 import { BODY_REGION_MAP } from '@/data/bodyRegions';
@@ -40,9 +41,13 @@ const QUALITY_CATEGORIES: DiscomfortQualityCategory[] = [
 
 interface RegionQualitiesPanelProps {
   onDone?: () => void;
+  isModalMode?: boolean;
 }
 
-export function RegionQualitiesPanel({ onDone }: RegionQualitiesPanelProps) {
+export function RegionQualitiesPanel({
+  onDone,
+  isModalMode = false,
+}: RegionQualitiesPanelProps) {
   const {
     activeRegionId,
     selectedRegions,
@@ -57,13 +62,29 @@ export function RegionQualitiesPanel({ onDone }: RegionQualitiesPanelProps) {
     useState<DiscomfortQualityCategory>('pain_qualities');
   const [isAllSensationsExpanded, setIsAllSensationsExpanded] = useState(false);
 
-  const handleDone = () => {
+  const handleDone = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (onDone) {
       onDone();
     } else {
       setActiveRegion(null);
     }
   };
+
+  useEffect(() => {
+    if (!isModalMode || !activeRegionId) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (onDone) {
+          onDone();
+        } else {
+          setActiveRegion(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isModalMode, activeRegionId, onDone, setActiveRegion]);
 
   if (!activeRegionId) {
     return (
@@ -77,7 +98,7 @@ export function RegionQualitiesPanel({ onDone }: RegionQualitiesPanelProps) {
               局部解剖部位定位與感受性質標記
             </h3>
             <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-              請在左側 2D 快速列表或 3D 人體模型中點選任一解剖部位（共 32 區），即可標記病灶深度、部位專屬臨床徵象及 24 項通用不適感受。
+              請在左側 3D 人體模型或 2D 快速列表中點選任一解剖部位（共 32 區），即可標記病灶深度、部位專屬臨床徵象及 24 項通用不適感受。
             </p>
           </div>
         </div>
@@ -99,9 +120,22 @@ export function RegionQualitiesPanel({ onDone }: RegionQualitiesPanelProps) {
   );
 
   return (
-    <div className="bg-slate-900 border border-cyan-500/50 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
-      {/* 部位標題、微型解剖 SVG 縮圖與側別標記 */}
-      <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
+    <div
+      className={
+        isModalMode
+          ? 'bg-slate-900 border border-cyan-500/50 rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[86vh] overflow-hidden'
+          : 'bg-slate-900 border border-cyan-500/50 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4'
+      }
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* 部位標題（Modal 模式下為固定 Sticky Header，右上角附大尺寸高對比 × 關閉鍵） */}
+      <div
+        className={
+          isModalMode
+            ? 'sticky top-0 z-20 bg-slate-900/98 backdrop-blur-md border-b border-slate-800 px-4 py-3.5 flex items-start justify-between gap-3 shrink-0'
+            : 'flex items-start justify-between gap-3 border-b border-slate-800 pb-3'
+        }
+      >
         <div className="flex items-start gap-3 min-w-0">
           <MiniAnatomicalSvg
             regionId={activeRegionId}
@@ -138,19 +172,40 @@ export function RegionQualitiesPanel({ onDone }: RegionQualitiesPanelProps) {
           </div>
         </div>
 
-        <div className="flex flex-col items-end gap-1.5 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           {currentRecord && (
             <button
               type="button"
-              onClick={() => removeSelectedRegion(activeRegionId)}
-              className="text-xs text-rose-400 hover:bg-rose-950/60 px-2.5 py-1 rounded-lg border border-rose-800/60 flex items-center gap-1 transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                removeSelectedRegion(activeRegionId);
+              }}
+              className="text-xs text-rose-400 hover:bg-rose-950/60 px-2.5 py-1.5 rounded-lg border border-rose-800/60 flex items-center gap-1 transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              清除
+              <span className="hidden sm:inline">清除</span>
+            </button>
+          )}
+          {isModalMode && (
+            <button
+              type="button"
+              onClick={handleDone}
+              className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-rose-600 text-white border border-slate-600 flex items-center justify-center shadow-md transition-colors cursor-pointer"
+              aria-label="關閉部位編輯視窗"
+              title="關閉 (ESC)"
+            >
+              <X className="w-5 h-5 stroke-[2.5]" />
             </button>
           )}
         </div>
       </div>
+
+      {/* 可捲動表單內容區 */}
+      <div
+        className={
+          isModalMode ? 'flex-1 overflow-y-auto p-4 space-y-4' : 'space-y-4'
+        }
+      >
 
       {/* 步驟 1：標記病灶深度層級（高對比深青底 + 亮青邊框 + 純白文字） */}
       <div className="space-y-2">
@@ -413,16 +468,23 @@ export function RegionQualitiesPanel({ onDone }: RegionQualitiesPanelProps) {
           </>
         )}
       </div>
+      </div>
 
-      {/* 明確的「完成此部位」確認鍵 */}
-      <div className="pt-2 border-t border-slate-800">
+      {/* 固定底部操作列（Sticky Footer）與醒目的「完成並關閉」主按鈕 */}
+      <div
+        className={
+          isModalMode
+            ? 'sticky bottom-0 z-20 bg-slate-900/98 backdrop-blur-md border-t border-slate-800 px-4 py-3 shrink-0'
+            : 'pt-2 border-t border-slate-800'
+        }
+      >
         <button
           type="button"
           onClick={handleDone}
-          className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-cyan-950/50 transition-colors"
+          className="w-full py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-cyan-950/50 transition-colors cursor-pointer"
         >
           <Check className="w-4 h-4 stroke-[2.5]" />
-          <span>完成此部位</span>
+          <span>{isModalMode ? '完成並關閉' : '完成此部位'}</span>
         </button>
       </div>
     </div>

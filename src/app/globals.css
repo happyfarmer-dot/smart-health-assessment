@@ -23,3 +23,43 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* 臨床評估報告書列印／另存 PDF 專用白底黑字樣式 */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-dossier,
+  .print-dossier * {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+    border-color: #cbd5e1 !important;
+    box-shadow: none !important;
+  }
+
+  .print-dossier .print-badge {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    border: 1px solid #94a3b8 !important;
+  }
+
+  .print-dossier .print-alert {
+    background-color: #fef2f2 !important;
+    border: 1px solid #dc2626 !important;
+    color: #991b1b !important;
+  }
+}

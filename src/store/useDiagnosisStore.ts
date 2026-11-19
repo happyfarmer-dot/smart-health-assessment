@@ -20,10 +20,23 @@ import {
 export type InputViewMode = '3d' | '2d';
 export type CameraOrientation = 'anterior' | 'posterior';
 
+export type CameraFocusPreset = 'full_body' | 'head_neck';
+
+export interface ApiConnectionTestState {
+  status: 'idle' | 'testing' | 'success' | 'error';
+  latencyMs?: number;
+  verifiedModelsCount?: number;
+  messageZh?: string;
+}
+
 interface DiagnosisWorkbenchState {
   // 頂部 API 連線設定條 (Top API Control Bar)
   apiSettings: ApiConnectionSettings;
+  isApiModalOpen: boolean;
+  apiTestState: ApiConnectionTestState;
   updateApiSettings: (partial: Partial<ApiConnectionSettings>) => void;
+  setApiModalOpen: (open: boolean) => void;
+  setApiTestState: (state: ApiConnectionTestState) => void;
 
   // 模組 A：基礎生理情境卡 (Context Profile)
   contextProfile: PatientContextProfile;
@@ -31,9 +44,10 @@ interface DiagnosisWorkbenchState {
   updateContextProfile: (partial: Partial<PatientContextProfile>) => void;
   setProfileExpanded: (expanded: boolean) => void;
 
-  // 模組 B：3D / 2D 雙模式狀態與雙向同步（預設為 2D 快速列表模式）
+  // 模組 B：3D / 2D 雙模式狀態與雙向同步（預設為 3D 模型模式）
   inputMode: InputViewMode;
   cameraOrientation: CameraOrientation;
+  cameraFocusPreset: CameraFocusPreset;
   cameraResetCount: number;
   activeRegionId: BodyRegionId | null;
   hoveredRegionId: BodyRegionId | null;
@@ -52,6 +66,7 @@ interface DiagnosisWorkbenchState {
   setInputMode: (mode: InputViewMode) => void;
   setCameraOrientation: (orientation: CameraOrientation) => void;
   toggleCameraOrientation: () => void;
+  setCameraFocusPreset: (preset: CameraFocusPreset) => void;
   triggerCameraReset: () => void;
   setActiveRegion: (regionId: BodyRegionId | null) => void;
   setHoveredRegion: (regionId: BodyRegionId | null) => void;
@@ -156,6 +171,8 @@ export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
   persist(
     (set, get) => ({
       apiSettings: DEFAULT_API_SETTINGS,
+      isApiModalOpen: false,
+      apiTestState: { status: 'idle' },
       updateApiSettings: (partial) =>
         set((state) => {
           const next = { ...state.apiSettings, ...partial };
@@ -177,8 +194,16 @@ export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
               // ignore storage quota errors
             }
           }
-          return { apiSettings: next };
+          return {
+            apiSettings: next,
+            apiTestState:
+              partial.apiKey !== undefined || partial.enabled !== undefined
+                ? { status: 'idle' }
+                : state.apiTestState,
+          };
         }),
+      setApiModalOpen: (open) => set({ isApiModalOpen: open }),
+      setApiTestState: (apiTestState) => set({ apiTestState }),
 
       contextProfile: DEFAULT_CONTEXT_PROFILE,
       isProfileExpanded: false,
@@ -207,8 +232,9 @@ export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
 
       setProfileExpanded: (expanded) => set({ isProfileExpanded: expanded }),
 
-      inputMode: '2d',
+      inputMode: '3d',
       cameraOrientation: 'anterior',
+      cameraFocusPreset: 'full_body',
       cameraResetCount: 0,
       activeRegionId: null,
       hoveredRegionId: null,
@@ -225,8 +251,12 @@ export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
           cameraOrientation:
             state.cameraOrientation === 'anterior' ? 'posterior' : 'anterior',
         })),
+      setCameraFocusPreset: (preset) => set({ cameraFocusPreset: preset }),
       triggerCameraReset: () =>
-        set((state) => ({ cameraResetCount: state.cameraResetCount + 1 })),
+        set((state) => ({
+          cameraFocusPreset: 'full_body',
+          cameraResetCount: state.cameraResetCount + 1,
+        })),
 
       setActiveRegion: (regionId) => {
         if (!regionId) {

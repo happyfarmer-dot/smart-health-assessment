@@ -41,6 +41,8 @@ interface DiagnosisStreamReportProps {
   pubmedResult: PubMedResearchResult | null;
   optionalGeminiKey: string;
   onChangeGeminiKey: (key: string) => void;
+  assessedAt?: string;
+  contextSummaryZh?: string;
 }
 
 const EVIDENCE_BADGE_STYLES: Record<EvidenceLevelTag, string> = {
@@ -60,9 +62,17 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
   pubmedResult,
   optionalGeminiKey,
   onChangeGeminiKey,
+  assessedAt,
+  contextSummaryZh,
 }) => {
   const [isSecondaryExpanded, setIsSecondaryExpanded] = useState(false);
-  const [isPubMedExpanded, setIsPubMedExpanded] = useState(true);
+  const [isPubMedExpanded, setIsPubMedExpanded] = useState(false);
+  const [expandedDiseaseMap, setExpandedDiseaseMap] = useState<
+    Record<string, boolean>
+  >({});
+  const [expandedAbstractPmids, setExpandedAbstractPmids] = useState<
+    Record<string, boolean>
+  >({});
   const [showApiKeyConfig, setShowApiKeyConfig] = useState(false);
 
   const hasAnyReportData =
@@ -72,28 +82,31 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
     Boolean(pubmedResult);
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/90 text-slate-100 shadow-xl overflow-hidden">
-      {/* 頂部會診報告標題與選填 Gemini API Key 擴充設定 */}
-      <div className="border-b border-slate-800 bg-slate-950/80 px-5 py-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-400">
+    <div className="print-dossier rounded-2xl border border-slate-700/80 bg-slate-900/95 text-slate-100 shadow-2xl overflow-hidden">
+      {/* 正式臨床評估報告書 (Clinical Dossier) 標頭 */}
+      <div className="border-b border-slate-800 bg-slate-950/90 px-5 py-5 space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 shrink-0">
               <Microscope className="h-5 w-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-bold text-slate-100">
-                  多專科會診 (MDT) 臨床疾病推論與鑑別診斷報告
-                </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="print-badge rounded-md bg-cyan-500/15 border border-cyan-500/40 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-cyan-300">
+                  Clinical Assessment Dossier
+                </span>
                 {isStreaming && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-300">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-300 no-print">
                     <Loader2 className="h-3 w-3 animate-spin" />
-                    SSE 串流會診推論中
+                    會診推論中
                   </span>
                 )}
               </div>
+              <h2 className="text-lg sm:text-xl font-black text-white mt-1">
+                多專科會診 (MDT) 臨床評估報告書
+              </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                現代實證西醫鑑別診斷 · 含診斷信心度評估、藥源性排查、支持與不支持證據、白話病理機轉與確診檢查建議
+                現代實證西醫鑑別診斷 · 含急迫度分流、支持與不支持證據、白話病理機轉與確診檢查建議
               </p>
             </div>
           </div>
@@ -101,7 +114,7 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
           <button
             type="button"
             onClick={() => setShowApiKeyConfig((prev) => !prev)}
-            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
+            className={`no-print inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
               optionalGeminiKey.trim()
                 ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300'
                 : 'border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700 hover:text-slate-200'
@@ -115,6 +128,40 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
             </span>
           </button>
         </div>
+
+        {/* 報告書中繼摘要欄：評估時間、生理情境摘要、急迫度標示 */}
+        {(assessedAt || contextSummaryZh || safetyResult) && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-slate-800/80 text-xs">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                評估時間
+              </div>
+              <div className="font-semibold text-slate-200 mt-0.5">
+                {assessedAt || '即時評估'}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                生理情境摘要
+              </div>
+              <div className="font-semibold text-slate-200 mt-0.5 truncate">
+                {contextSummaryZh || '成人臨床評估'}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                臨床急迫度標示
+              </div>
+              <div className="font-bold mt-0.5 text-cyan-300 truncate">
+                {safetyResult
+                  ? safetyResult.hasRedFlagAlert
+                    ? `危急警訊：${safetyResult.alerts[0]?.suspectedEmergencyConditionZh || '建議立即急診評估'}`
+                    : '未觸發危急警訊（門診／觀察）'
+                  : '評估分析中...'}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 選填 Gemini API Key 摺疊列 */}
         {showApiKeyConfig && (
@@ -355,122 +402,164 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
                   </span>
                 </div>
 
-                <div className="space-y-5">
-                  {primaryResult.topSuspectedDiseases.map((dx, index) => (
-                    <div
-                      key={dx.diseaseId}
-                      className="rounded-2xl border border-slate-700/90 bg-slate-950/85 p-5 shadow-md space-y-4"
-                    >
-                      {/* 疾病標題、中英文對照與可能性分級 */}
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-800 pb-3.5">
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-xs font-extrabold text-cyan-300">
-                              #{index + 1}
-                            </span>
-                            <h4 className="text-base sm:text-lg font-extrabold text-slate-100">
-                              {dx.diseaseNameZh}
-                            </h4>
-                          </div>
-                          <div className="text-xs font-mono text-cyan-400/90 pl-8">
-                            {dx.diseaseNameEn}
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap sm:flex-col items-start sm:items-end gap-1.5 shrink-0">
-                          <span
-                            className={`rounded-full border px-3 py-1 text-xs font-bold ${
-                              dx.probabilityLevel.startsWith('高度')
-                                ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
-                                : 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300'
-                            }`}
-                          >
-                            {dx.probabilityLevel} · 臨床吻合度 {dx.clinicalMatchScorePct}%
-                          </span>
-                          <div className="flex flex-wrap gap-1">
-                            {dx.involvedSpecialtiesTw.map((sp) => (
+                <div className="space-y-4">
+                  {primaryResult.topSuspectedDiseases.map((dx, index) => {
+                    const isExpanded =
+                      expandedDiseaseMap[dx.diseaseId] ?? index === 0;
+                    return (
+                      <div
+                        key={dx.diseaseId}
+                        className={`rounded-2xl border bg-slate-950/85 shadow-md overflow-hidden transition-all ${
+                          index === 0
+                            ? 'border-cyan-500/60'
+                            : 'border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        {/* 疾病標題、中英文對照與可能性分級（點擊可展開／收合） */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedDiseaseMap((prev) => ({
+                              ...prev,
+                              [dx.diseaseId]: !isExpanded,
+                            }))
+                          }
+                          className="w-full text-left p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-900/50 transition-colors cursor-pointer"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span
-                                key={sp}
-                                className="rounded-md bg-slate-800 border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300"
+                                className={`inline-flex h-6 w-6 items-center justify-center rounded-lg border text-xs font-extrabold ${
+                                  index === 0
+                                    ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-300'
+                                    : 'bg-slate-800 border-slate-700 text-slate-300'
+                                }`}
                               >
-                                {sp}
+                                #{index + 1}
                               </span>
-                            ))}
+                              <h4 className="text-base sm:text-lg font-extrabold text-slate-100">
+                                {dx.diseaseNameZh}
+                              </h4>
+                            </div>
+                            <div className="text-xs font-mono text-cyan-400/90 pl-8">
+                              {dx.diseaseNameEn}
+                            </div>
                           </div>
-                        </div>
-                      </div>
 
-                      {/* 支持證據 vs 不支持／待確認證據 */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                        <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/15 p-3.5 space-y-2">
-                          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-300">
-                            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                            支持此疾病之臨床證據 (Supporting Evidence)
+                          <div className="flex flex-wrap sm:flex-col items-start sm:items-end gap-1.5 shrink-0">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`print-badge rounded-full border px-3 py-1 text-xs font-bold ${
+                                  dx.probabilityLevel.startsWith('高度')
+                                    ? 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                                    : 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300'
+                                }`}
+                              >
+                                {dx.probabilityLevel} · 吻合度 {dx.clinicalMatchScorePct}%
+                              </span>
+                              <span className="no-print inline-flex items-center gap-1 text-[11px] font-bold text-slate-400">
+                                {isExpanded ? (
+                                  <ChevronUp className="w-4 h-4 text-cyan-400" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                                )}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {dx.involvedSpecialtiesTw.map((sp) => (
+                                <span
+                                  key={sp}
+                                  className="rounded-md bg-slate-800 border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300"
+                                >
+                                  {sp}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                          <ul className="space-y-1.5 text-xs text-slate-200">
-                            {dx.clinicalReasoning.supportingEvidenceZh.map((ev, i) => (
-                              <li key={i} className="flex items-start gap-2">
-                                <span className="text-emerald-400 font-bold">•</span>
-                                <span>{ev}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
+                        </button>
 
-                        <div className="rounded-xl border border-amber-500/30 bg-amber-950/15 p-3.5 space-y-2">
-                          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
-                            <XCircle className="h-4 w-4 text-amber-400 shrink-0" />
-                            不支持或尚待確認之鑑別點 (Lacking / Rule-out Factors)
-                          </div>
-                          <ul className="space-y-1.5 text-xs text-slate-300">
-                            {dx.clinicalReasoning.unsupportingOrLackingEvidenceZh.map(
-                              (ev, i) => (
-                                <li key={i} className="flex items-start gap-2">
-                                  <span className="text-amber-400 font-bold">•</span>
-                                  <span>{ev}</span>
-                                </li>
-                              )
-                            )}
-                          </ul>
-                        </div>
-                      </div>
-
-                      {/* 白話病理機轉說明 */}
-                      <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-3.5 space-y-1.5">
-                        <div className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
-                          <Activity className="h-3.5 w-3.5" />
-                          白話西醫病理機轉 (Pathophysiology Explanation)
-                        </div>
-                        <p className="text-xs text-slate-200 leading-relaxed">
-                          {dx.pathophysiologyPlainZh}
-                        </p>
-                      </div>
-
-                      {/* 醫學確診與排除關鍵檢查項目 */}
-                      <div className="rounded-xl border border-cyan-500/25 bg-cyan-950/15 p-3.5 space-y-2.5">
-                        <div className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
-                          <FlaskConical className="h-4 w-4 text-cyan-400" />
-                          臨床上用來確診或排除該疾病的關鍵檢查項目 (Confirmatory Diagnostic Tests)
-                        </div>
-                        <div className="grid grid-cols-1 gap-2">
-                          {dx.confirmatoryDiagnosticTests.map((test, tIdx) => (
-                            <div
-                              key={tIdx}
-                              className="rounded-lg border border-slate-800 bg-slate-950/80 p-2.5 text-xs"
-                            >
-                              <div className="font-bold text-slate-100">
-                                {tIdx + 1}. {test.testNameZh}
+                        {isExpanded && (
+                          <div className="px-4 sm:px-5 pb-5 pt-3 border-t border-slate-800/80 space-y-4">
+                            {/* 支持證據 vs 不支持／待確認證據 */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                              <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/15 p-3.5 space-y-2">
+                                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-300">
+                                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                                  支持此疾病之臨床證據 (Supporting Evidence)
+                                </div>
+                                <ul className="space-y-1.5 text-xs text-slate-200">
+                                  {dx.clinicalReasoning.supportingEvidenceZh.map(
+                                    (ev, i) => (
+                                      <li key={i} className="flex items-start gap-2">
+                                        <span className="text-emerald-400 font-bold">•</span>
+                                        <span>{ev}</span>
+                                      </li>
+                                    )
+                                  )}
+                                </ul>
                               </div>
-                              <div className="text-slate-300 mt-0.5">
-                                <span className="text-cyan-400 font-medium">檢查目的與預期發現：</span>
-                                {test.expectedFindingOrPurposeZh}
+
+                              <div className="rounded-xl border border-amber-500/30 bg-amber-950/15 p-3.5 space-y-2">
+                                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
+                                  <XCircle className="h-4 w-4 text-amber-400 shrink-0" />
+                                  不支持或尚待確認之鑑別點 (Lacking / Rule-out Factors)
+                                </div>
+                                <ul className="space-y-1.5 text-xs text-slate-300">
+                                  {dx.clinicalReasoning.unsupportingOrLackingEvidenceZh.map(
+                                    (ev, i) => (
+                                      <li key={i} className="flex items-start gap-2">
+                                        <span className="text-amber-400 font-bold">•</span>
+                                        <span>{ev}</span>
+                                      </li>
+                                    )
+                                  )}
+                                </ul>
                               </div>
                             </div>
-                          ))}
-                        </div>
+
+                            {/* 白話病理機轉說明 */}
+                            <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-3.5 space-y-1.5">
+                              <div className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                                <Activity className="h-3.5 w-3.5" />
+                                白話西醫病理機轉 (Pathophysiology Explanation)
+                              </div>
+                              <p className="text-xs text-slate-200 leading-relaxed">
+                                {dx.pathophysiologyPlainZh}
+                              </p>
+                            </div>
+
+                            {/* 醫學確診與排除關鍵檢查項目 */}
+                            <div className="rounded-xl border border-cyan-500/25 bg-cyan-950/15 p-3.5 space-y-2.5">
+                              <div className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                                <FlaskConical className="h-4 w-4 text-cyan-400" />
+                                臨床上用來確診或排除該疾病的關鍵檢查項目 (Confirmatory Diagnostic Tests)
+                              </div>
+                              <div className="grid grid-cols-1 gap-2">
+                                {dx.confirmatoryDiagnosticTests.map(
+                                  (test, tIdx) => (
+                                    <div
+                                      key={tIdx}
+                                      className="rounded-lg border border-slate-800 bg-slate-950/80 p-2.5 text-xs"
+                                    >
+                                      <div className="font-bold text-slate-100">
+                                        {tIdx + 1}. {test.testNameZh}
+                                      </div>
+                                      <div className="text-slate-300 mt-0.5">
+                                        <span className="text-cyan-400 font-medium">
+                                          檢查目的與預期發現：
+                                        </span>
+                                        {test.expectedFindingOrPurposeZh}
+                                      </div>
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -621,88 +710,108 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
             </div>
           )}
 
-          {/* ==================== Event 4: pubmed_research (Phase 4 零幻覺 PubMed 實證文獻) ==================== */}
+          {/* 底部醫療免責聲明 */}
+          <div className="rounded-xl border border-slate-800/80 bg-slate-950/90 px-4 py-3 text-[11px] text-slate-400 leading-relaxed">
+            <span className="font-bold text-slate-300">
+              臨床決策支援系統 (CDSS) 醫療聲明：
+            </span>
+            本系統採用現代實證西醫鑑別診斷邏輯與 NCBI PubMed 真實人類文獻檢索，旨在提供具備病理機轉與檢查方向之「就醫前多專科會診參考報告」，不能取代親自就診時由醫師進行之理學檢查（如聽診、觸診）、抽血檢驗與醫學影像診斷。
+          </div>
+
+          {/* ==================== 報告頁最底端頁尾：PubMed 臨床實證文獻（預設完全摺疊） ==================== */}
           {pubmedResult && (
-            <div className="rounded-xl border border-slate-800 bg-slate-950/75 overflow-hidden">
+            <div className="rounded-xl border border-slate-800/70 bg-slate-950/50 overflow-hidden">
               <button
                 type="button"
                 onClick={() => setIsPubMedExpanded((prev) => !prev)}
-                className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/80 transition-colors"
+                className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-slate-900/60 transition-colors cursor-pointer"
               >
-                <div className="flex items-center gap-2.5">
-                  <BookOpen className="h-4 w-4 text-cyan-400 shrink-0" />
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs sm:text-sm font-bold text-slate-100">
-                        PubMed 臨床實證醫學文獻佐證（NCBI E-utilities 即時檢索 · 零幻覺保證）
-                      </span>
-                      <span className="rounded-full bg-cyan-500/15 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-mono text-cyan-300">
-                        Locked: AND Humans[MeSH]
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      所有 PMID、標題、年份與期刊均直接取自美國國家醫學圖書館 API，嚴禁 AI 憑記憶生成
-                    </p>
-                  </div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <BookOpen className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <span className="text-xs font-semibold text-slate-400 truncate">
+                    參考資料：PubMed 臨床實證文獻佐證（共{' '}
+                    {pubmedResult.articles.length} 篇，點擊展開）
+                  </span>
                 </div>
                 {isPubMedExpanded ? (
-                  <ChevronUp className="h-4 w-4 text-slate-400 shrink-0" />
+                  <ChevronUp className="h-4 w-4 text-slate-500 shrink-0" />
                 ) : (
-                  <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+                  <ChevronDown className="h-4 w-4 text-slate-500 shrink-0" />
                 )}
               </button>
 
               {isPubMedExpanded && (
-                <div className="border-t border-slate-800 p-4 space-y-3">
-                  {/* 顯示實際執行的 E-utilities Query */}
-                  <div className="rounded-lg border border-slate-800 bg-slate-900/90 p-2.5 text-[11px] font-mono text-slate-400 break-all">
-                    <span className="text-cyan-400 font-semibold">Executed NCBI Query: </span>
-                    {pubmedResult.executedQuery}
-                  </div>
-
+                <div className="border-t border-slate-800/80 p-4 space-y-3">
                   {pubmedResult.articles.length > 0 ? (
-                    <div className="grid grid-cols-1 gap-3">
-                      {pubmedResult.articles.map((art) => (
-                        <div
-                          key={art.pmid}
-                          className="rounded-xl border border-slate-800 bg-slate-900/75 p-3.5 space-y-2"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span
-                                className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${
-                                  EVIDENCE_BADGE_STYLES[art.evidenceLevel]
-                                }`}
+                    <div className="grid grid-cols-1 gap-2.5">
+                      {pubmedResult.articles.map((art) => {
+                        const showEnAbstract = Boolean(
+                          expandedAbstractPmids[art.pmid]
+                        );
+                        return (
+                          <div
+                            key={art.pmid}
+                            className="rounded-xl border border-slate-800 bg-slate-900/65 p-3.5 space-y-2"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${
+                                    EVIDENCE_BADGE_STYLES[art.evidenceLevel]
+                                  }`}
+                                >
+                                  {art.evidenceLevel}
+                                </span>
+                                <span className="text-xs text-slate-400">
+                                  {art.publicationYear} · {art.journalName}
+                                </span>
+                              </div>
+
+                              <a
+                                href={art.pubmedUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-400 hover:text-cyan-300"
                               >
-                                {art.evidenceLevel}
-                              </span>
-                              <span className="text-xs font-mono text-cyan-400">
-                                PMID: {art.pmid}
-                              </span>
-                              <span className="text-xs text-slate-400">
-                                {art.journalName} ({art.publicationYear})
-                              </span>
+                                <span>PMID: {art.pmid}</span>
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
                             </div>
 
-                            <a
-                              href={art.pubmedUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-400 hover:text-cyan-300"
-                            >
-                              <span>PubMed 原文</span>
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          </div>
+                            <p className="text-xs text-slate-200 leading-relaxed">
+                              {art.plainClinicalTakeawayZh}
+                            </p>
 
-                          <h5 className="text-xs sm:text-sm font-bold text-slate-100 leading-snug">
-                            {art.title}
-                          </h5>
-                          <p className="text-xs text-slate-300 leading-relaxed">
-                            {art.plainClinicalTakeawayZh}
-                          </p>
-                        </div>
-                      ))}
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedAbstractPmids((prev) => ({
+                                    ...prev,
+                                    [art.pmid]: !showEnAbstract,
+                                  }))
+                                }
+                                className="text-[11px] font-semibold text-slate-400 hover:text-cyan-300 underline underline-offset-4 cursor-pointer"
+                              >
+                                {showEnAbstract
+                                  ? '收合英文原文摘要'
+                                  : '檢視英文原文摘要'}
+                              </button>
+
+                              {showEnAbstract && (
+                                <div className="mt-2 rounded-lg border border-slate-800 bg-slate-950/80 p-2.5 text-[11px] text-slate-300 space-y-1">
+                                  <div className="font-semibold text-slate-100">
+                                    {art.title}
+                                  </div>
+                                  <div className="font-mono text-[10px] text-slate-500 break-all">
+                                    Query: {pubmedResult.executedQuery}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="flex items-start gap-2.5 rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 text-xs text-slate-300">
@@ -717,14 +826,6 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
               )}
             </div>
           )}
-
-          {/* 底部醫療免責聲明 */}
-          <div className="rounded-xl border border-slate-800/80 bg-slate-950/90 px-4 py-3 text-[11px] text-slate-400 leading-relaxed">
-            <span className="font-bold text-slate-300">
-              臨床決策支援系統 (CDSS) 醫療聲明：
-            </span>
-            本系統採用現代實證西醫鑑別診斷邏輯與 NCBI PubMed 真實人類文獻檢索，旨在提供具備病理機轉與檢查方向之「就醫前多專科會診參考報告」，不能取代親自就診時由醫師進行之理學檢查（如聽診、觸診）、抽血檢驗與醫學影像診斷。
-          </div>
         </div>
       )}
     </div>
