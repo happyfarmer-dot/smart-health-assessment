@@ -240,11 +240,11 @@ export const DISCOMFORT_QUALITIES_CATALOG: DiscomfortQualityItem[] = [
  * 24 區專屬附加臨床症狀庫（補充通用不適感之外的器官特異性表現）
  */
 export const REGION_SPECIFIC_SYMPTOMS: RegionSpecificSymptomItem[] = [
-  // 1. 頭部與顱骨 head_cranial
+  // 1. 頭顱與頭皮 head_cranial
   {
     id: 'sp_head_unilateral_migraine',
     regionId: 'head_cranial',
-    labelZh: '單側太陽穴或眼眶後反覆頭痛（常伴隨畏光、怕吵或噁心）',
+    labelZh: '單側太陽穴或眼眶後反覆搏動性頭痛（常伴隨畏光、怕吵或噁心）',
     defaultDepth: 'deep_visceral',
     colloquialAliases: ['偏頭痛', '太陽穴痛', '頭痛想吐'],
     meshTermsEn: ['Migraine Disorders', 'Headache'],
@@ -266,83 +266,194 @@ export const REGION_SPECIFIC_SYMPTOMS: RegionSpecificSymptomItem[] = [
     meshTermsEn: ['Thunderclap Headache', 'Subarachnoid Hemorrhage'],
     isRedFlagWeight: true,
   },
+  {
+    id: 'sp_head_scalp_folliculitis_zoster',
+    regionId: 'head_cranial',
+    labelZh: '頭皮毛囊紅疹膿皰、脂漏性脫屑搔癢，或單側頭皮刺痛水泡（帶狀疱疹）',
+    defaultDepth: 'superficial',
+    colloquialAliases: ['頭皮癢', '頭皮毛囊炎', '頭皮皮蛇', '掉髮'],
+    meshTermsEn: ['Scalp Dermatoses', 'Folliculitis', 'Herpes Zoster'],
+  },
 
-  // 2. 臉部與五官 face_sensory
+  // 2. 眼部與眼眶 eye_orbital (眼科、神經內科)
   {
-    id: 'sp_face_vision_blur_photophobia',
-    regionId: 'face_sensory',
-    labelZh: '視力模糊、視野缺損、複視（看東西兩個影）或眼壓脹痛',
+    id: 'sp_eye_blur_sudden_vision_loss',
+    regionId: 'eye_orbital',
+    labelZh: '視力模糊、視野缺損（局部黑影遮蔽）或突發視力急遽下降',
     defaultDepth: 'deep_visceral',
-    colloquialAliases: ['視力模糊', '眼睛痛', '看東西兩個影', '青光眼'],
-    meshTermsEn: ['Vision Disorders', 'Diplopia', 'Eye Pain'],
+    colloquialAliases: ['視力模糊', '看不清楚', '視野缺損', '眼中風'],
+    meshTermsEn: ['Vision Disorders', 'Retinal Artery Occlusion', 'Optic Neuritis'],
+    isRedFlagWeight: true,
   },
   {
-    id: 'sp_face_tinnitus_hearing_ear',
-    regionId: 'face_sensory',
-    labelZh: '耳鳴、耳悶塞感、聽力下降或內耳旋轉性眩暈',
+    id: 'sp_eye_diplopia_double_vision',
+    regionId: 'eye_orbital',
+    labelZh: '複視（看東西出現兩個疊影，單眼遮住時消失或仍存在）或眼球轉動受限',
     defaultDepth: 'deep_visceral',
-    colloquialAliases: ['耳鳴', '耳悶', '聽不清楚', '梅尼爾氏症'],
-    meshTermsEn: ['Tinnitus', 'Meniere Disease', 'Hearing Loss'],
+    colloquialAliases: ['複視', '看東西兩個影', '重影'],
+    meshTermsEn: ['Diplopia', 'Oculomotor Nerve Diseases'],
+    isRedFlagWeight: true,
   },
   {
-    id: 'sp_face_sinus_congestion',
-    regionId: 'face_sensory',
-    labelZh: '鼻塞、黃綠色濃鼻涕倒流、眉心或雙頰鼻竇區脹痛',
+    id: 'sp_eye_floaters_flashes_retinal',
+    regionId: 'eye_orbital',
+    labelZh: '飛蚊症黑點突然暴增、視野邊緣出現閃電閃光感或黑幕遮擋（視網膜裂孔／剝離警訊）',
     defaultDepth: 'deep_visceral',
-    colloquialAliases: ['鼻竇炎', '鼻塞', '流濃鼻涕', '鼻涕倒流'],
+    colloquialAliases: ['飛蚊症', '閃光感', '視網膜剝離'],
+    meshTermsEn: ['Vitreous Detachment', 'Retinal Detachment', 'Eye Manifestations'],
+    isRedFlagWeight: true,
+  },
+  {
+    id: 'sp_eye_glaucoma_pressure_halo',
+    regionId: 'eye_orbital',
+    labelZh: '眼球深層劇烈脹痛（眼壓高）、看燈光有彩虹光圈，伴隨同側頭痛與噁心嘔吐',
+    defaultDepth: 'deep_visceral',
+    colloquialAliases: ['眼壓高', '急性青光眼', '眼睛脹痛想吐'],
+    meshTermsEn: ['Glaucoma, Angle-Closure', 'Ocular Hypertension', 'Eye Pain'],
+    isRedFlagWeight: true,
+  },
+  {
+    id: 'sp_eye_redness_photophobia_discharge',
+    regionId: 'eye_orbital',
+    labelZh: '紅眼充血、嚴重畏光、異物刺痛感、流淚或大量黃稠眼屎分泌物',
+    defaultDepth: 'superficial',
+    colloquialAliases: ['紅眼症', '結膜炎', '角膜炎', '畏光', '眼屎多', '乾眼症'],
+    meshTermsEn: ['Conjunctivitis', 'Keratitis', 'Photophobia', 'Dry Eye Syndromes'],
+  },
+
+  // 3. 耳部與聽覺前庭 ear_auditory (耳鼻喉科、神經內科)
+  {
+    id: 'sp_ear_tinnitus_sudden_hearing_loss',
+    regionId: 'ear_auditory',
+    labelZh: '持續高頻或搏動性耳鳴、耳悶塞感或 72 小時內突發性單側聽力下降（耳中風）',
+    defaultDepth: 'deep_visceral',
+    colloquialAliases: ['耳鳴', '突發性耳聾', '聽力下降', '耳悶', '耳中風'],
+    meshTermsEn: ['Tinnitus', 'Hearing Loss, Sudden'],
+    isRedFlagWeight: true,
+  },
+  {
+    id: 'sp_ear_vertigo_meniere_bppv',
+    regionId: 'ear_auditory',
+    labelZh: '轉頭或翻身時誘發天旋地轉眩暈（耳石症），或伴隨耳鳴耳脹之反覆眩暈（梅尼爾氏症）',
+    defaultDepth: 'deep_visceral',
+    colloquialAliases: ['眩暈', '耳石脫落', '梅尼爾氏症', '天旋地轉'],
+    meshTermsEn: ['Benign Paroxysmal Positional Vertigo', 'Meniere Disease', 'Vertigo'],
+  },
+  {
+    id: 'sp_ear_otalgia_otorrhea_otitis',
+    regionId: 'ear_auditory',
+    labelZh: '耳道深處抽痛、拉扯耳廓疼痛或外耳道流出黃膿／水樣分泌物（耳漏）',
+    defaultDepth: 'superficial',
+    colloquialAliases: ['耳朵痛', '中耳炎', '外耳炎', '耳朵流膿', '耳漏'],
+    meshTermsEn: ['Otitis Media', 'Otitis Externa', 'Earache'],
+  },
+
+  // 4. 鼻與鼻竇 nose_sinus (耳鼻喉科、過敏免疫科)
+  {
+    id: 'sp_nose_purulent_sinusitis_facial_pressure',
+    regionId: 'nose_sinus',
+    labelZh: '持續鼻塞、黃綠色濃稠鼻涕或鼻涕倒流，伴隨臉頰（上頷竇）或眉心（額竇）前傾壓痛',
+    defaultDepth: 'deep_visceral',
+    colloquialAliases: ['鼻竇炎', '黃綠鼻涕', '鼻涕倒流', '眉心壓痛'],
     meshTermsEn: ['Sinusitis', 'Rhinitis'],
   },
   {
+    id: 'sp_nose_epistaxis_anosmia_allergy',
+    regionId: 'nose_sinus',
+    labelZh: '反覆流鼻血（或鼻涕帶血絲）、嗅覺明顯減退／喪失，或連續打噴嚏流清涕',
+    defaultDepth: 'superficial',
+    colloquialAliases: ['流鼻血', '嗅覺喪失', '過敏性鼻炎', '鼻涕帶血'],
+    meshTermsEn: ['Epistaxis', 'Olfaction Disorders', 'Rhinitis, Allergic'],
+  },
+
+  // 5. 口腔、牙齒與下顎 oral_dental_jaw (牙科／口腔顎面外科、耳鼻喉科)
+  {
+    id: 'sp_oral_toothache_pulpitis_abscess',
+    regionId: 'oral_dental_jaw',
+    labelZh: '冷熱刺激或夜間自發性劇烈牙痛（牙髓炎）、牙齦紅腫化膿出血或臉頰下顎腫脹',
+    defaultDepth: 'deep_visceral',
+    colloquialAliases: ['牙痛', '蛀牙痛', '牙齦腫痛', '牙周病', '長智齒痛'],
+    meshTermsEn: ['Toothache', 'Pulpitis', 'Periodontal Abscess'],
+  },
+  {
+    id: 'sp_oral_tmj_trismus_clicking',
+    regionId: 'oral_dental_jaw',
+    labelZh: '張口或咀嚼時耳前顳顎關節疼痛彈響、張口受限（嘴巴張不開）或夜間磨牙下顎緊繃',
+    defaultDepth: 'musculoskeletal',
+    colloquialAliases: ['顳顎關節痛', '張口困難', '咬合痛'],
+    meshTermsEn: ['Temporomandibular Joint Disorders', 'Trismus'],
+  },
+  {
+    id: 'sp_oral_ulcer_leukoplakia_glossitis',
+    regionId: 'oral_dental_jaw',
+    labelZh: '口腔黏膜或舌頭反覆潰瘍（嘴破超過 2 週未癒合）、白斑紅斑或舌頭灼熱麻痛',
+    defaultDepth: 'superficial',
+    colloquialAliases: ['嘴破', '口腔潰瘍', '口腔白斑', '舌頭痛'],
+    meshTermsEn: ['Stomatitis, Aphthous', 'Oral Ulcer', 'Leukoplakia, Oral'],
+  },
+
+  // 6. 喉嚨與咽喉 neck_throat (耳鼻喉科、肝膽腸胃科)
+  {
+    id: 'sp_neck_dysphagia_odynophagia',
+    regionId: 'neck_throat',
+    labelZh: '吞嚥困難、吞口水如刀割劇痛、扁桃腺紅腫化膿或發燒伴隨流口水（會厭炎警訊）',
+    defaultDepth: 'deep_visceral',
+    colloquialAliases: ['吞嚥困難', '喉嚨劇痛', '扁桃腺發炎', '會厭炎'],
+    meshTermsEn: ['Deglutition Disorders', 'Pharyngitis', 'Tonsillitis', 'Epiglottitis'],
+  },
+  {
+    id: 'sp_throat_hoarseness_globus_lpr',
+    regionId: 'neck_throat',
+    labelZh: '聲音沙啞持續超過 2 週、喉嚨異物感（卡卡的吞不下也咳不出，咽喉逆流或聲帶病灶）',
+    defaultDepth: 'superficial',
+    colloquialAliases: ['聲音沙啞', '喉嚨卡卡', '異物感', '喉球症', '清喉嚨'],
+    meshTermsEn: ['Hoarseness', 'Laryngopharyngeal Reflux', 'Laryngitis'],
+  },
+
+  // 7. 臉部皮膚與顏面神經 face_sensory (皮膚科、神經內科)
+  {
     id: 'sp_face_facial_palsy_slurred',
     regionId: 'face_sensory',
-    labelZh: '單側嘴角歪斜流口水、眼皮無法閉合或說話大舌頭（口齒不清）',
+    labelZh: '單側嘴角歪斜流口水、法令紋消失、眼皮無法閉合或伴隨說話大舌頭（口齒不清）',
     defaultDepth: 'deep_visceral',
     colloquialAliases: ['臉歪嘴斜', '顏面神經麻痺', '口齒不清', '講話大舌頭'],
     meshTermsEn: ['Facial Paralysis', 'Bell Palsy', 'Dysarthria', 'Stroke'],
     isRedFlagWeight: true,
   },
   {
-    id: 'sp_face_tmj_jaw_pain',
+    id: 'sp_face_trigeminal_electric_zoster',
     regionId: 'face_sensory',
-    labelZh: '張口咀嚼時耳前顳顎關節彈響疼痛，或下巴莫名酸痛悶脹',
-    defaultDepth: 'musculoskeletal',
-    colloquialAliases: ['下巴痛', '顳顎關節痛', '咬東西痛'],
-    meshTermsEn: ['Temporomandibular Joint Disorders', 'Facial Pain'],
+    labelZh: '刷牙洗臉或微風吹拂即觸發單側臉頰如電擊刀割般劇痛（三叉神經痛），或單側顏面水泡紅疹',
+    defaultDepth: 'superficial',
+    colloquialAliases: ['三叉神經痛', '臉部電擊痛', '臉部帶狀疱疹', '臉紅疹蝴蝶斑'],
+    meshTermsEn: ['Trigeminal Neuralgia', 'Herpes Zoster Ophthalmicus', 'Facial Dermatoses'],
   },
 
-  // 3. 頸部與咽喉 neck_throat
+  // 8. 頸部、甲狀腺與後頸椎 neck_cervical_thyroid
   {
-    id: 'sp_neck_dysphagia_odynophagia',
-    regionId: 'neck_throat',
-    labelZh: '吞嚥困難、吞口水劇痛、喉嚨灼熱紅腫或聲音沙啞',
+    id: 'sp_neck_thyroid_anterior_mass',
+    regionId: 'neck_cervical_thyroid',
+    labelZh: '前頸甲狀腺區腫大結節（隨吞嚥上下移動）、前頸壓痛（亞急性甲狀腺炎）或側頸無痛淋巴結硬塊',
     defaultDepth: 'deep_visceral',
-    colloquialAliases: ['吞嚥困難', '喉嚨痛', '扁桃腺發炎', '聲音沙啞'],
-    meshTermsEn: ['Deglutition Disorders', 'Pharyngitis', 'Tonsillitis'],
+    colloquialAliases: ['甲狀腺腫大', '大脖子', '甲狀腺結節', '頸部淋巴腫塊'],
+    meshTermsEn: ['Goiter', 'Thyroid Nodule', 'Thyroiditis', 'Lymphadenopathy'],
   },
   {
     id: 'sp_neck_meningeal_stiffness',
-    regionId: 'neck_throat',
-    labelZh: '後頸極度僵硬、低頭時下巴無法碰觸胸口（腦膜刺激徵兆）',
+    regionId: 'neck_cervical_thyroid',
+    labelZh: '後頸極度僵硬伴隨高燒頭痛、低頭時下巴無法碰觸胸口（腦膜炎腦膜刺激徵兆）',
     defaultDepth: 'deep_visceral',
-    colloquialAliases: ['頸部僵硬', '無法低頭'],
+    colloquialAliases: ['腦膜炎頸部僵硬', '脖子僵硬發燒頭痛'],
     meshTermsEn: ['Meningism', 'Meningitis'],
     isRedFlagWeight: true,
   },
   {
-    id: 'sp_neck_thyroid_anterior_mass',
-    regionId: 'neck_throat',
-    labelZh: '前頸甲狀腺區腫大（隨吞嚥上下移動）或側頸淋巴結腫塊',
-    defaultDepth: 'deep_visceral',
-    colloquialAliases: ['甲狀腺腫大', '大脖子', '頸部淋巴腫塊'],
-    meshTermsEn: ['Goiter', 'Thyroid Diseases', 'Lymphadenopathy'],
-  },
-  {
     id: 'sp_neck_cervical_radiculopathy',
-    regionId: 'neck_throat',
-    labelZh: '後頸椎轉動受限痠痛，並向肩膀或上肢放射發麻',
+    regionId: 'neck_cervical_thyroid',
+    labelZh: '後頸椎轉動受限僵硬痠痛，並向肩膀、肩胛骨或單側手臂手指放射發麻（頸椎神經根壓迫）',
     defaultDepth: 'musculoskeletal',
-    colloquialAliases: ['頸椎病', '落枕', '頸椎壓迫神經'],
-    meshTermsEn: ['Cervical Radiculopathy', 'Neck Pain'],
+    colloquialAliases: ['頸椎病', '落枕', '頸椎椎間盤突出', '脖子痛手麻'],
+    meshTermsEn: ['Cervical Radiculopathy', 'Neck Pain', 'Spondylosis'],
   },
 
   // 4. 左胸與心前區 chest_left
@@ -396,6 +507,33 @@ export const REGION_SPECIFIC_SYMPTOMS: RegionSpecificSymptomItem[] = [
     defaultDepth: 'superficial',
     colloquialAliases: ['乳房痛', '乳房硬塊', '乳腺炎'],
     meshTermsEn: ['Mastodynia', 'Breast Diseases'],
+  },
+
+  // 5-B. 乳房與乳腺區 breast_mammary (乳房外科、婦產科)
+  {
+    id: 'sp_breast_painless_lump_dimpling',
+    regionId: 'breast_mammary',
+    labelZh: '乳房或腋下摸到界線不規則之無痛硬塊、乳房皮膚酒窩凹陷、橘皮變化或乳頭凹陷',
+    defaultDepth: 'superficial',
+    colloquialAliases: ['乳房硬塊', '胸部硬塊', '乳房腫塊', '乳房凹陷'],
+    meshTermsEn: ['Breast Neoplasms', 'Breast Diseases', 'Fibrocystic Breast Disease'],
+    isRedFlagWeight: true,
+  },
+  {
+    id: 'sp_breast_cyclical_mastalgia_mastitis',
+    regionId: 'breast_mammary',
+    labelZh: '生理期前雙側乳房週期性脹痛結節（纖維囊腫），或哺乳期單側乳房紅腫發熱劇痛（急性乳腺炎）',
+    defaultDepth: 'superficial',
+    colloquialAliases: ['乳房痛', '乳腺炎', '纖維囊腫', '漲奶痛'],
+    meshTermsEn: ['Mastodynia', 'Mastitis', 'Fibrocystic Breast Disease'],
+  },
+  {
+    id: 'sp_breast_nipple_bloody_discharge',
+    regionId: 'breast_mammary',
+    labelZh: '非哺乳期單側乳頭自發性流出暗紅色血水、清澈液體或乳汁分泌物（乳管內乳突瘤／泌乳激素異常）',
+    defaultDepth: 'superficial',
+    colloquialAliases: ['乳頭流血', '乳頭分泌物', '溢乳'],
+    meshTermsEn: ['Nipple Discharge', 'Galactorrhea', 'Breast Diseases'],
   },
 
   // 6. 上背部與肩胛區 upper_back
@@ -571,13 +709,58 @@ export const REGION_SPECIFIC_SYMPTOMS: RegionSpecificSymptomItem[] = [
     colloquialAliases: ['坐骨神經痛', '梨狀肌症候群', '屁股麻痛'],
     meshTermsEn: ['Piriformis Muscle Syndrome', 'Sciatica'],
   },
+
+  // 14-B. 生殖與泌尿會陰區 urogenital_perineal (泌尿科、婦產科、感染科、皮膚科)
   {
-    id: 'sp_butt_anorectal_hemorrhoid_fissure',
-    regionId: 'buttocks_hip',
-    labelZh: '排便時肛門刀割撕裂痛、便後滴鮮血或肛門旁摸到腫痛結節',
+    id: 'sp_uro_dysuria_discharge_urethritis',
+    regionId: 'urogenital_perineal',
+    labelZh: '排尿時尿道口灼熱刺痛、尿道流出黃白或透明分泌物、頻尿夜尿或排尿困難（攝護腺／尿道炎）',
     defaultDepth: 'superficial',
-    colloquialAliases: ['痔瘡', '肛裂', '肛門膿瘍', '便血'],
-    meshTermsEn: ['Hemorrhoids', 'Fissure in Ano', 'Abscess'],
+    colloquialAliases: ['尿道炎', '排尿刺痛', '尿道分泌物', '攝護腺肥大', '攝護腺炎'],
+    meshTermsEn: ['Urethritis', 'Urinary Tract Infections', 'Prostatitis'],
+  },
+  {
+    id: 'sp_uro_vaginal_pruritus_discharge_vulvitis',
+    regionId: 'urogenital_perineal',
+    labelZh: '外陰會陰搔癢紅腫、異常陰道分泌物（豆腐渣狀／黃綠泡沫／魚腥味）或巴氏腺囊腫腫痛',
+    defaultDepth: 'superficial',
+    colloquialAliases: ['念珠菌感染', '陰道炎', '私密處搔癢', '白帶異常', '巴氏腺囊腫'],
+    meshTermsEn: ['Vaginitis', 'Candidiasis, Vulvovaginal', 'Vulvitis'],
+  },
+  {
+    id: 'sp_uro_scrotal_testicular_acute_pain',
+    regionId: 'urogenital_perineal',
+    labelZh: '單側陰囊或睪丸突發劇烈抽痛腫大（需緊急排除睪丸扭轉或急性副睪丸炎），或會陰生殖器水泡潰瘍',
+    defaultDepth: 'deep_visceral',
+    colloquialAliases: ['睪丸痛', '陰囊腫痛', '睪丸扭轉', '副睪丸炎', '生殖器水泡潰瘍'],
+    meshTermsEn: ['Spermatic Cord Torsion', 'Epididymitis', 'Orchitis'],
+    isRedFlagWeight: true,
+  },
+
+  // 14-C. 肛門與直腸區 anal_rectal (大腸直腸外科、肝膽腸胃科)
+  {
+    id: 'sp_anal_hemorrhoid_bright_bleeding_prolapse',
+    regionId: 'anal_rectal',
+    labelZh: '排便後滴出鮮紅色血液（衛生紙染鮮血）、肛門口摸到柔軟或脹痛肉球脫垂（內外痔瘡／血栓痔）',
+    defaultDepth: 'superficial',
+    colloquialAliases: ['痔瘡', '大便流鮮血', '便血', '內痔脫垂', '外痔腫痛'],
+    meshTermsEn: ['Hemorrhoids', 'Gastrointestinal Hemorrhage'],
+  },
+  {
+    id: 'sp_anal_fissure_tearing_pain',
+    regionId: 'anal_rectal',
+    labelZh: '解硬便時肛門口如刀割或撕裂般劇痛，便後持續抽痛數十分鐘並伴隨少量鮮血（急性／慢性肛裂）',
+    defaultDepth: 'superficial',
+    colloquialAliases: ['肛裂', '排便肛門撕裂痛'],
+    meshTermsEn: ['Fissure in Ano'],
+  },
+  {
+    id: 'sp_anal_perianal_abscess_tenesmus',
+    regionId: 'anal_rectal',
+    labelZh: '肛門周圍紅腫發燙搏動性劇痛（坐立難安、伴隨發燒或流膿，肛門膿瘍／廔管），或持續想排便卻解不出（里急後重）',
+    defaultDepth: 'deep_visceral',
+    colloquialAliases: ['肛門膿瘍', '肛門廔管', '里急後重', '直腸腫痛'],
+    meshTermsEn: ['Abscess', 'Rectal Fistula', 'Proctitis', 'Rectal Neoplasms'],
   },
 
   // 15. 右肩關節 shoulder_r

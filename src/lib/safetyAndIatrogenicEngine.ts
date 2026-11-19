@@ -104,7 +104,14 @@ export function evaluateSilentSafetyCheck(
     });
   }
 
-  // 4. 單側下肢深層靜脈栓塞 (DVT) 併肺栓塞風險
+  // 4. 單側下肢深層靜脈栓塞 (DVT) 併肺栓塞風險（含近期長途飛行／久臥或手術骨折 TOCC 加權）
+  const hasImmobilityTocc =
+    payload.contextProfile.recentEventsTocc?.includes(
+      'long_flight_bedrest_immobility'
+    ) ||
+    payload.contextProfile.recentEventsTocc?.includes(
+      'recent_surgery_trauma_fracture'
+    );
   if (
     (hasSpecific('sp_calf_r_unilateral_dvt_swelling') ||
       hasSpecific('sp_calf_l_unilateral_dvt_swelling') ||
@@ -112,16 +119,59 @@ export function evaluateSilentSafetyCheck(
     (hasRegion('chest_left') ||
       hasRegion('chest_right') ||
       hasSystemic('sys_exertional_dyspnea') ||
-      hasSystemic('sys_cyanosis'))
+      hasSystemic('sys_cyanosis') ||
+      hasImmobilityTocc)
   ) {
     alerts.push({
       ruleId: 'RF_DVT_PULMONARY_EMBOLISM',
       suspectedEmergencyConditionZh:
         '疑似下肢深層靜脈栓塞（DVT）併發急性肺栓塞（Pulmonary Embolism）高風險',
       triggeringEvidenceZh:
-        '單側小腿不對稱腫脹壓痛，且同時合併胸痛、呼吸急促或低血氧表現',
+        '單側小腿不對稱腫脹壓痛，且合併胸痛、呼吸急促或近期手術／外傷／長途飛行久臥之血栓危險因子',
       immediateActionZh:
         '請立即前往急診室，切勿推拿或按摩腫脹之下肢，需優先檢驗 D-dimer、下肢靜脈杜卜勒超音波與肺動脈電腦斷層 (CTPA)。',
+    });
+  }
+
+  // 5. 精神科／身心科危機關懷與緊急支持（自我傷害或輕生念頭）
+  if (hasSystemic('sys_psych_self_harm_ideation')) {
+    alerts.push({
+      ruleId: 'RF_PSYCHIATRIC_SELF_HARM_CARE',
+      suspectedEmergencyConditionZh:
+        '身心危機關懷與緊急支持（Psychiatric Crisis & Immediate Support）',
+      triggeringEvidenceZh:
+        '您標記了「自我傷害或輕生念頭」，系統啟動最高優先級之溫暖關懷與專業心理醫療資源提示',
+      immediateActionZh:
+        '請您務必知道您並不孤單，現在即可撥打衛福部 24 小時免費安心專線「1925（依舊愛我）」、生命線「1995」或張老師「1980」，或由親友陪伴前往各大醫院精神科／身心科急診尋求安全支持。',
+    });
+  }
+
+  // 6. 眼科急症：急性隅角閉鎖性青光眼 / 視網膜剝離或視網膜中央動脈阻塞（眼中風）
+  if (
+    hasSpecific('sp_eye_glaucoma_pressure_halo') ||
+    hasSpecific('sp_eye_floaters_flashes_retinal') ||
+    hasSpecific('sp_eye_blur_sudden_vision_loss')
+  ) {
+    alerts.push({
+      ruleId: 'RF_OPHTHALMOLOGIC_VISION_EMERGENCY',
+      suspectedEmergencyConditionZh:
+        '疑似眼科視覺急症（急性隅角閉鎖性青光眼 Acute Angle-Closure Glaucoma／視網膜裂孔剝離 Retinal Detachment／視網膜血管阻塞）',
+      triggeringEvidenceZh:
+        '出現眼球劇烈脹痛伴彩虹光圈嘔吐、飛蚊與閃電閃光暴增或黑幕遮蔽視野、或突發無痛性視力急遽喪失',
+      immediateActionZh:
+        '請於今日立即前往眼科急診或大型眼科門診進行眼壓測定（Tonometry）與散瞳眼底視網膜檢查，爭取黃金搶救視力時間。',
+    });
+  }
+
+  // 7. 泌尿科急症：急性陰囊／睪丸劇痛（需黃金 6 小時內排除睪丸扭轉）
+  if (hasSpecific('sp_uro_scrotal_testicular_acute_pain')) {
+    alerts.push({
+      ruleId: 'RF_UROLOGIC_TESTICULAR_TORSION',
+      suspectedEmergencyConditionZh:
+        '疑似急性陰囊急症（需緊急排除睪丸扭轉 Testicular Torsion 或急性副睪丸炎）',
+      triggeringEvidenceZh: '出現單側陰囊或睪丸突發劇烈抽痛與腫大',
+      immediateActionZh:
+        '睪丸扭轉之黃金搶救時間為發作後 6 小時內，請立即前往急診室安排陰囊彩色杜卜勒超音波（Color Doppler Ultrasound）確認血流。',
     });
   }
 

@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import {
+  ApiConnectionSettings,
   BodyRegionId,
   ClinicalFollowUpParams,
   PatientContextProfile,
@@ -20,13 +21,17 @@ export type InputViewMode = '3d' | '2d';
 export type CameraOrientation = 'anterior' | 'posterior';
 
 interface DiagnosisWorkbenchState {
+  // 頂部 API 連線設定條 (Top API Control Bar)
+  apiSettings: ApiConnectionSettings;
+  updateApiSettings: (partial: Partial<ApiConnectionSettings>) => void;
+
   // 模組 A：基礎生理情境卡 (Context Profile)
   contextProfile: PatientContextProfile;
   isProfileExpanded: boolean;
   updateContextProfile: (partial: Partial<PatientContextProfile>) => void;
   setProfileExpanded: (expanded: boolean) => void;
 
-  // 模組 B：3D / 2D 雙模式狀態與雙向同步
+  // 模組 B：3D / 2D 雙模式狀態與雙向同步（預設為 2D 快速列表模式）
   inputMode: InputViewMode;
   cameraOrientation: CameraOrientation;
   cameraResetCount: number;
@@ -36,7 +41,7 @@ interface DiagnosisWorkbenchState {
   // 已選局部部位臨床紀錄（含深度、24項通用不適感性質、部位專屬症狀）
   selectedRegions: Record<string, SelectedRegionClinicalRecord>;
 
-  // 模組 C-2：已選全身性症狀 ID 陣列（涵蓋 6 大系統 44 項）
+  // 模組 C-2：已選全身性症狀 ID 陣列（涵蓋 7 大系統 53 項）
   systemicSymptomIds: string[];
 
   // 模組 D：輕量化臨床特徵追問
@@ -72,13 +77,31 @@ interface DiagnosisWorkbenchState {
   toggleModifyingFactor: (factorId: TriggerOrReliefFactorId) => void;
 }
 
+const DEFAULT_API_SETTINGS: ApiConnectionSettings = {
+  enabled: false,
+  apiKey: '',
+  modelId: 'gemini-2.5-flash',
+  rememberInLocalStorage: false,
+};
+
 const DEFAULT_CONTEXT_PROFILE: PatientContextProfile = {
   ageGroup: '18-39',
   biologicalSex: 'male',
+  heightCm: undefined,
+  weightKg: undefined,
   pregnancyStatus: 'not_applicable',
+  smokingStatus: 'never',
+  alcoholHabit: 'none',
+  betelNutHabit: 'never',
+  exerciseFrequency: 'moderate_1_2_week',
   chronicConditions: [],
+  customChronicNote: '',
+  drugAndFoodAllergies: '',
+  familyHistory: [],
   highRiskMedications: [],
   customMedicationNote: '',
+  recentEventsTocc: [],
+  customToccNote: '',
   updatedAt: new Date().toISOString(),
 };
 
@@ -132,6 +155,31 @@ function buildOrCleanupRegionRecord(
 export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
   persist(
     (set, get) => ({
+      apiSettings: DEFAULT_API_SETTINGS,
+      updateApiSettings: (partial) =>
+        set((state) => {
+          const next = { ...state.apiSettings, ...partial };
+          if (typeof window !== 'undefined') {
+            try {
+              sessionStorage.setItem(
+                'cdss-api-session-v4',
+                JSON.stringify(next)
+              );
+              if (next.rememberInLocalStorage) {
+                localStorage.setItem(
+                  'cdss-api-local-v4',
+                  JSON.stringify(next)
+                );
+              } else {
+                localStorage.removeItem('cdss-api-local-v4');
+              }
+            } catch {
+              // ignore storage quota errors
+            }
+          }
+          return { apiSettings: next };
+        }),
+
       contextProfile: DEFAULT_CONTEXT_PROFILE,
       isProfileExpanded: false,
 
@@ -148,6 +196,7 @@ export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
           }
           return {
             contextProfile: {
+              ...DEFAULT_CONTEXT_PROFILE,
               ...state.contextProfile,
               ...partial,
               pregnancyStatus: nextPreg,
@@ -158,7 +207,7 @@ export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
 
       setProfileExpanded: (expanded) => set({ isProfileExpanded: expanded }),
 
-      inputMode: '3d',
+      inputMode: '2d',
       cameraOrientation: 'anterior',
       cameraResetCount: 0,
       activeRegionId: null,

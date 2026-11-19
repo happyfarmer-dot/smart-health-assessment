@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, ContactShadows } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
@@ -10,6 +10,8 @@ import {
   Hand,
   ShieldCheck,
   Crosshair,
+  Sliders,
+  Info,
 } from 'lucide-react';
 import { AnatomicalHumanModel3D } from './AnatomicalHumanModel3D';
 import { useDiagnosisStore } from '@/store/useDiagnosisStore';
@@ -33,15 +35,47 @@ function CameraController() {
   return (
     <OrbitControls
       ref={controlsRef}
+      enableDamping={true}
+      dampingFactor={0.06}
       enablePan={true}
       enableZoom={true}
       enableRotate={true}
-      minDistance={2.1}
-      maxDistance={6.6}
-      maxPolarAngle={Math.PI * 0.86}
-      minPolarAngle={Math.PI * 0.14}
+      minDistance={2.2}
+      maxDistance={6.4}
+      maxPolarAngle={Math.PI * 0.85}
+      minPolarAngle={Math.PI * 0.15}
     />
   );
+}
+
+/**
+ * 錯誤邊界 (Error Boundary)：確保任何 WebGL 或外部 .glb 異常都不會導致白畫面崩潰
+ */
+class ThreeCanvasErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950 text-slate-300 p-6 text-center space-y-2">
+          <div className="text-sm font-bold text-rose-300">
+            3D WebGL 渲染器初始化受限，建議使用上方「2D 快速列表模式」繼續標記症狀
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export function BodyCanvas3D() {
@@ -54,6 +88,29 @@ export function BodyCanvas3D() {
     selectedRegions,
     setActiveRegion,
   } = useDiagnosisStore();
+
+  // 規格 2：支援網址參數 `?debug=hitbox` 觸發熱區線框與微調滑桿（模型 Y 軸偏移與整體縮放倍率）
+  const [debugHitbox, setDebugHitbox] = useState(false);
+  const [calibYOffset, setCalibYOffset] = useState(0);
+  const [calibScale, setCalibScale] = useState(1.0);
+  const [modelStatus, setModelStatus] = useState<{
+    isLoading: boolean;
+    progressPct: number;
+    usingFallback: boolean;
+  }>({
+    isLoading: false,
+    progressPct: 100,
+    usingFallback: true,
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('debug') === 'hitbox') {
+        setDebugHitbox(true);
+      }
+    }
+  }, []);
 
   const isAnterior = cameraOrientation === 'anterior';
   const inspectRegion =
@@ -96,6 +153,64 @@ export function BodyCanvas3D() {
         </div>
       </div>
 
+      {/* 規格 2：當網址帶有 ?debug=hitbox 時顯示的開發校準工具列（平時不顯示在一般使用者畫面上） */}
+      {debugHitbox && (
+        <div className="relative z-20 mx-4 rounded-xl border border-amber-500/50 bg-slate-950/90 p-3 text-xs text-slate-200 backdrop-blur-md shadow-xl space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-extrabold text-amber-300 flex items-center gap-1.5">
+              <Sliders className="w-3.5 h-3.5" />
+              3D 熱區對齊校準模式 (?debug=hitbox) — 32 區彩色線框已開啟
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setCalibYOffset(0);
+                setCalibScale(1.0);
+              }}
+              className="rounded bg-slate-800 px-2 py-0.5 text-[11px] text-cyan-300 hover:bg-slate-700"
+            >
+              重置參數
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <div className="flex justify-between text-[11px] text-slate-400">
+                <span>模型 Y 軸偏移 (Y-Offset)</span>
+                <span className="font-mono text-cyan-300">
+                  {calibYOffset.toFixed(2)}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={-1.0}
+                max={1.0}
+                step={0.02}
+                value={calibYOffset}
+                onChange={(e) => setCalibYOffset(Number(e.target.value))}
+                className="w-full accent-cyan-400"
+              />
+            </div>
+            <div>
+              <div className="flex justify-between text-[11px] text-slate-400">
+                <span>模型整體縮放倍率 (Scale)</span>
+                <span className="font-mono text-cyan-300">
+                  {calibScale.toFixed(2)}x
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0.6}
+                max={1.4}
+                step={0.02}
+                value={calibScale}
+                onChange={(e) => setCalibScale(Number(e.target.value))}
+                className="w-full accent-cyan-400"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 左右側別防呆標示 (病人自身視角 Laterality Safeguard) */}
       <div className="pointer-events-none absolute inset-y-20 left-3.5 flex items-center z-10">
         <div className="bg-slate-950/85 border border-cyan-500/30 text-cyan-200 px-3 py-2.5 rounded-xl backdrop-blur-md shadow-xl">
@@ -125,31 +240,77 @@ export function BodyCanvas3D() {
         </div>
       </div>
 
-      {/* Three.js R3F 醫療級柔和三點打光畫布 */}
+      {/* 規格 1 & 6：畫布角落微小備援提示 + 最右下角 CC-BY 授權標示位 */}
+      {!modelStatus.isLoading && modelStatus.usingFallback && (
+        <div className="pointer-events-none absolute bottom-[86px] left-3.5 z-10">
+          <span className="inline-flex items-center gap-1 rounded-md bg-slate-950/75 border border-slate-800/80 px-2 py-0.5 text-[10px] text-slate-400 backdrop-blur-sm">
+            <Info className="w-3 h-3 text-cyan-400/80" />
+            尚未偵測到自訂模型 (/public/models/human_body.glb)，目前使用預設輪廓
+          </span>
+        </div>
+      )}
+
+      <div className="pointer-events-none absolute bottom-[86px] right-3.5 z-10">
+        <span className="rounded-md bg-slate-950/60 px-2 py-0.5 text-[10px] text-slate-500/90 backdrop-blur-sm">
+          3D Model Attribution (CC-BY)
+        </span>
+      </div>
+
+      {/* 規格 4 & 5：三點醫學打光 (Three-Point Medical Lighting) 與 dpr={[1, 2]} 行動端效能保護 */}
       <div className="absolute inset-0">
-        <Canvas
-          camera={{ position: [0, 0.72, 4.35], fov: 40 }}
-          onPointerMissed={() => setActiveRegion(null)}
-        >
-          {/* 柔和醫療三點照明：環境底光 + 主光 (Key Light) + 冷色補光 (Fill Light) + 背向輪廓邊緣光 (Rim Light) */}
-          <ambientLight intensity={0.75} />
-          <directionalLight position={[3.5, 5.5, 4.5]} intensity={1.35} color="#f8fafc" />
-          <directionalLight position={[-4.0, 2.5, 3.0]} intensity={0.85} color="#38bdf8" />
-          <directionalLight position={[0, 3.5, -5.0]} intensity={1.1} color="#22d3ee" />
-          <pointLight position={[0, 1.4, 2.6]} intensity={0.6} color="#06b6d4" />
+        <ThreeCanvasErrorBoundary>
+          <Canvas
+            dpr={[1, 2]}
+            camera={{ position: [0, 0.72, 4.35], fov: 40 }}
+            onPointerMissed={() => setActiveRegion(null)}
+          >
+            {/* 1. 主光 (Key Light)：右前上方柔光 DirectionalLight（自然白 #f8fafc，勾勒肌肉與骨骼立體陰影） */}
+            <directionalLight
+              position={[3.8, 5.2, 4.2]}
+              intensity={1.25}
+              color="#f8fafc"
+            />
 
-          <AnatomicalHumanModel3D />
+            {/* 2. 補光 (Fill Light)：左前方低強度冷色調 DirectionalLight（淡青白 #bae6fd）搭配微弱 HemisphereLight */}
+            <directionalLight
+              position={[-3.6, 2.4, 3.2]}
+              intensity={0.58}
+              color="#bae6fd"
+            />
+            <hemisphereLight args={['#e0f2fe', '#0f172a', 0.48]} />
 
-          <ContactShadows
-            position={[0, -2.32, 0]}
-            opacity={0.55}
-            scale={4.8}
-            blur={2.5}
-            far={4}
-            color="#0284c7"
-          />
-          <CameraController />
-        </Canvas>
+            {/* 3. 輪廓背光 (Rim / Back Light)：後方偏上方高對比 DirectionalLight 與 SpotLight（醫療青藍 #38bdf8） */}
+            <directionalLight
+              position={[0, 4.2, -5.0]}
+              intensity={1.45}
+              color="#38bdf8"
+            />
+            <spotLight
+              position={[0, 3.8, -4.2]}
+              angle={0.55}
+              penumbra={0.85}
+              intensity={1.15}
+              color="#38bdf8"
+            />
+
+            <AnatomicalHumanModel3D
+              debugHitbox={debugHitbox}
+              yOffset={calibYOffset}
+              scaleMultiplier={calibScale}
+              onModelStatusChange={setModelStatus}
+            />
+
+            <ContactShadows
+              position={[0, -2.32, 0]}
+              opacity={0.5}
+              scale={4.8}
+              blur={2.5}
+              far={4}
+              color="#0284c7"
+            />
+            <CameraController />
+          </Canvas>
+        </ThreeCanvasErrorBoundary>
       </div>
 
       {/* 底部腹部五分區快捷定位與解剖器官提示列 */}
@@ -204,7 +365,7 @@ export function BodyCanvas3D() {
             <div className="flex items-center gap-1.5 text-slate-400">
               <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span>
-                請點選 3D 人體分區（共 24 區，含腹部五分區），於右側標記「深度層級」與「疼痛／不適感受性質」。
+                請點選 3D 人體分區（共 32 區，含頭頸五官 8 區、乳房、腹部五區、生殖泌尿與肛門直腸），標記深度與不適性質。
               </span>
             </div>
           )}

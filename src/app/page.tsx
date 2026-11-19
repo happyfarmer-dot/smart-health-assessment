@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Cpu,
 } from 'lucide-react';
+import { TopApiControlBar } from '@/components/layout/TopApiControlBar';
 import { ContextProfileCard } from '@/components/layout/ContextProfileCard';
 import { ModeAndSearchHeader } from '@/components/symptom-input/ModeAndSearchHeader';
 import { RegionQualitiesPanel } from '@/components/symptom-input/RegionQualitiesPanel';
@@ -43,7 +44,7 @@ const BodyCanvas3D = dynamic(
       <div className="w-full h-[540px] sm:h-[620px] bg-slate-950 rounded-2xl border border-slate-800 flex flex-col items-center justify-center text-cyan-300 gap-2.5">
         <Activity className="w-8 h-8 animate-spin text-cyan-400" />
         <span className="text-sm font-bold">
-          正在載入單一完整 3D 人體輪廓模型與 24 區透明感應熱區...
+          正在載入 3D 人體模型 (DRACO / Fresnel 輪廓光) 與 32 區透明感應熱區...
         </span>
       </div>
     ),
@@ -52,6 +53,8 @@ const BodyCanvas3D = dynamic(
 
 export default function ClinicalDiagnosisWorkbenchPage() {
   const {
+    apiSettings,
+    updateApiSettings,
     contextProfile,
     inputMode,
     selectedRegions,
@@ -70,7 +73,6 @@ export default function ClinicalDiagnosisWorkbenchPage() {
   const [differentialResult, setDifferentialResult] =
     useState<DifferentialAndAnalysisResult | null>(null);
   const [pubmedResult, setPubmedResult] = useState<PubMedResearchResult | null>(null);
-  const [optionalGeminiKey, setOptionalGeminiKey] = useState('');
 
   const reportSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -108,6 +110,11 @@ export default function ClinicalDiagnosisWorkbenchPage() {
       clientTimestamp: new Date().toISOString(),
     };
 
+    const activeCustomKey =
+      apiSettings.enabled && apiSettings.apiKey.trim()
+        ? apiSettings.apiKey.trim()
+        : '';
+
     await runIsomorphicDiagnosisStream(
       payload,
       {
@@ -118,12 +125,16 @@ export default function ClinicalDiagnosisWorkbenchPage() {
         onComplete: () => setIsStreaming(false),
         onError: () => setIsStreaming(false),
       },
-      optionalGeminiKey
+      activeCustomKey,
+      apiSettings.modelId
     );
   };
 
   return (
-    <main className="max-w-7xl mx-auto px-4 py-5 sm:py-6 space-y-5">
+    <main className="max-w-7xl mx-auto px-4 py-4 sm:py-5 space-y-4">
+      {/* Patch #1：頁面最上方新增「API 設定列」（Top API Control Bar） */}
+      <TopApiControlBar />
+
       {/* 頂部純淨臨床決策支援系統標題列（無任何 Demo 範例按鈕） */}
       <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-900/95 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl">
         <div className="flex items-start sm:items-center gap-3.5">
@@ -140,7 +151,7 @@ export default function ClinicalDiagnosisWorkbenchPage() {
               </span>
               <span className="text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
                 <Cpu className="w-3 h-3 text-cyan-400" />
-                單一 3D 輪廓 + 24 透明感應熱區
+                32 區全身無死角解剖分區 + Fresnel 3D 渲染
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
@@ -327,8 +338,10 @@ export default function ClinicalDiagnosisWorkbenchPage() {
           primaryResult={primaryResult}
           differentialResult={differentialResult}
           pubmedResult={pubmedResult}
-          optionalGeminiKey={optionalGeminiKey}
-          onChangeGeminiKey={setOptionalGeminiKey}
+          optionalGeminiKey={apiSettings.enabled ? apiSettings.apiKey : ''}
+          onChangeGeminiKey={(key) =>
+            updateApiSettings({ enabled: true, apiKey: key })
+          }
         />
       </div>
 

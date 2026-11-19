@@ -76,9 +76,81 @@ export const SYSTEMIC_SYMPTOMS_BY_CATEGORY: SystemicCategoryGroup[] = [
     ],
   },
   {
+    categoryId: 'psychiatry_sleep',
+    categoryNameZh: '2. 精神、情緒與睡眠（精神科／身心科）',
+    subtitleZh: '情緒低落、焦慮恐慌發作、心神不寧、失眠早醒、過度換氣、強迫、記憶退化、幻覺妄想與自我傷害念頭（9 項）',
+    items: [
+      {
+        id: 'sys_psych_depressed_anhedonia',
+        categoryId: 'psychiatry_sleep',
+        labelZh: '持續情緒低落／對事物失去興趣',
+        colloquialAliases: ['憂鬱', '情緒低落', '沒動力', '對什麼都沒興趣', '鬱卒'],
+        meshEn: 'Depressive Disorder',
+      },
+      {
+        id: 'sys_psych_anxiety_panic_attack',
+        categoryId: 'psychiatry_sleep',
+        labelZh: '過度焦慮或突發恐慌發作（伴隨瀕死感／胸悶心悸）',
+        colloquialAliases: ['恐慌症', '恐慌發作', '極度焦慮', '害怕失控', '瀕死感'],
+        meshEn: 'Panic Disorder',
+      },
+      {
+        id: 'sys_psych_restlessness_agitation',
+        categoryId: 'psychiatry_sleep',
+        labelZh: '心神不寧／坐立難安／易怒煩躁',
+        colloquialAliases: ['心神不寧', '坐立難安', '煩躁', '易怒', '靜不下來'],
+        meshEn: 'Psychomotor Agitation',
+      },
+      {
+        id: 'sys_psych_insomnia_early_awakening',
+        categoryId: 'psychiatry_sleep',
+        labelZh: '嚴重失眠／入睡困難／清晨早醒或異常嗜睡',
+        colloquialAliases: ['失眠', '早醒', '睡不著', '睡眠障礙', '多夢易醒'],
+        meshEn: 'Sleep Initiation and Maintenance Disorders',
+      },
+      {
+        id: 'sys_psych_hyperventilation',
+        categoryId: 'psychiatry_sleep',
+        labelZh: '過度換氣感（覺得吸不到氣、手腳與嘴唇發麻）',
+        colloquialAliases: ['過度換氣', '喘不過氣手麻', '呼吸急促手麻'],
+        meshEn: 'Hyperventilation',
+      },
+      {
+        id: 'sys_psych_ocd_intrusive_thoughts',
+        categoryId: 'psychiatry_sleep',
+        labelZh: '強迫念頭或反覆確認行為（強迫傾向）',
+        colloquialAliases: ['強迫症', '反覆檢查', '反覆洗手', '強迫思考'],
+        meshEn: 'Obsessive-Compulsive Disorder',
+      },
+      {
+        id: 'sys_psych_memory_cognitive_decline',
+        categoryId: 'psychiatry_sleep',
+        labelZh: '記憶力明顯退化／近期健忘',
+        colloquialAliases: ['記憶力退化', '健忘', '失智前兆', '忘東忘西'],
+        meshEn: 'Memory Disorders',
+      },
+      {
+        id: 'sys_psych_hallucination_delusion',
+        categoryId: 'psychiatry_sleep',
+        labelZh: '幻覺（幻聽／幻視）或妄想意念',
+        colloquialAliases: ['幻聽', '幻覺', '妄想', '被害妄想'],
+        meshEn: 'Hallucinations',
+        isRedFlagWeight: true,
+      },
+      {
+        id: 'sys_psych_self_harm_ideation',
+        categoryId: 'psychiatry_sleep',
+        labelZh: '自我傷害或輕生念頭（將啟動溫暖關懷與安心專線提示）',
+        colloquialAliases: ['自我傷害', '想不開', '輕生念頭'],
+        meshEn: 'Suicidal Ideation',
+        isRedFlagWeight: true,
+      },
+    ],
+  },
+  {
     categoryId: 'neuro_psychiatric',
-    categoryNameZh: '2. 神經與精神系統',
-    subtitleZh: '疲倦、眩暈、暈厥前兆、睡眠、腦霧、意識與震顫（9 項）',
+    categoryNameZh: '3. 神經與平衡系統',
+    subtitleZh: '疲倦虛弱、眩暈、暈厥前兆、嗜睡、腦霧、意識模糊與肢體震顫（9 項）',
     items: [
       {
         id: 'sys_extreme_fatigue',
@@ -111,23 +183,23 @@ export const SYSTEMIC_SYMPTOMS_BY_CATEGORY: SystemicCategoryGroup[] = [
       {
         id: 'sys_severe_insomnia',
         categoryId: 'neuro_psychiatric',
-        labelZh: '嚴重失眠',
-        colloquialAliases: ['失眠', '睡不著', '淺眠易醒'],
-        meshEn: 'Sleep Initiation and Maintenance Disorders',
+        labelZh: '自律神經失調／日夜節律混亂',
+        colloquialAliases: ['自律神經失調', '日夜顛倒', '淺眠易醒'],
+        meshEn: 'Autonomic Nervous System Diseases',
       },
       {
         id: 'sys_brain_fog_inattention',
         categoryId: 'neuro_psychiatric',
         labelZh: '注意力不集中／腦霧',
-        colloquialAliases: ['腦霧', '注意力不集中', '記憶力下降', '思緒混亂'],
+        colloquialAliases: ['腦霧', '注意力不集中', '思緒混亂'],
         meshEn: 'Cognitive Dysfunction',
       },
       {
         id: 'sys_mood_swings_anxiety',
         categoryId: 'neuro_psychiatric',
-        labelZh: '情緒劇烈波動／焦慮躁動',
-        colloquialAliases: ['焦慮', '躁動', '情緒波動', '心慌'],
-        meshEn: 'Anxiety',
+        labelZh: '感覺神經異常／四肢末梢麻木感',
+        colloquialAliases: ['手腳末梢麻', '神經麻木'],
+        meshEn: 'Paresthesia',
       },
       {
         id: 'sys_confusion_slow_response',
@@ -148,7 +220,7 @@ export const SYSTEMIC_SYMPTOMS_BY_CATEGORY: SystemicCategoryGroup[] = [
   },
   {
     categoryId: 'cardio_respiratory',
-    categoryNameZh: '3. 心血管與呼吸系統',
+    categoryNameZh: '4. 心血管與呼吸系統',
     subtitleZh: '心悸、活動氣促、端坐呼吸、水腫與血壓波動（5 項）',
     items: [
       {
@@ -191,7 +263,7 @@ export const SYSTEMIC_SYMPTOMS_BY_CATEGORY: SystemicCategoryGroup[] = [
   },
   {
     categoryId: 'gi_excretory',
-    categoryNameZh: '4. 消化與排泄系統',
+    categoryNameZh: '5. 消化與排泄系統',
     subtitleZh: '食慾、噁心嘔吐、排便異常、黑血便與排尿異常（11 項）',
     items: [
       {
@@ -277,7 +349,7 @@ export const SYSTEMIC_SYMPTOMS_BY_CATEGORY: SystemicCategoryGroup[] = [
   },
   {
     categoryId: 'skin_mucosa_appearance',
-    categoryNameZh: '5. 皮膚、黏膜與外觀',
+    categoryNameZh: '6. 皮膚、黏膜與外觀',
     subtitleZh: '紅疹、搔癢、黃疸、蒼白、發紺、瘀青、口乾眼乾、潰瘍與掉髮（9 項）',
     items: [
       {
@@ -349,7 +421,7 @@ export const SYSTEMIC_SYMPTOMS_BY_CATEGORY: SystemicCategoryGroup[] = [
   },
   {
     categoryId: 'immune_lymphatic',
-    categoryNameZh: '6. 免疫與淋巴系統',
+    categoryNameZh: '7. 免疫、血液與淋巴系統',
     subtitleZh: '多發關節晨僵、全身肌痛、淋巴腫大與反覆感染（4 項）',
     items: [
       {

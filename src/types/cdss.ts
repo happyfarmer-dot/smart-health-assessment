@@ -2,6 +2,26 @@ export type AgeGroup = '0-12' | '13-17' | '18-39' | '40-64' | '65+';
 export type BiologicalSex = 'male' | 'female' | 'intersex_or_other';
 export type PregnancyPossibility = 'no' | 'possible_or_confirmed' | 'not_applicable';
 
+export type SmokingStatus = 'never' | 'former' | 'current';
+export type AlcoholHabit = 'none' | 'social_occasional' | 'regular_heavy';
+export type BetelNutHabit = 'never' | 'former_or_current';
+export type ExerciseFrequency =
+  | 'sedentary'
+  | 'moderate_1_2_week'
+  | 'active_3_plus_week';
+
+export type FamilyHistoryConditionId =
+  | 'cvd_coronary'       // 心血管疾病 / 冠心病
+  | 'stroke'             // 腦中風
+  | 'diabetes'           // 糖尿病
+  | 'cancer'             // 惡性腫瘤（癌症）
+  | 'autoimmune';        // 自體免疫疾病
+
+export type RecentEventToccId =
+  | 'recent_surgery_trauma_fracture' // 近 1 個月內手術／外傷／骨折
+  | 'long_flight_bedrest_immobility' // 長途飛行、久坐不動或長期臥床（深部靜脈栓塞／肺栓塞風險）
+  | 'recent_travel_infectious_contact'; // 近期國內外旅遊史、山林蚊蟲叮咬或傳染病接觸史
+
 export type ChronicConditionId =
   | 'hypertension'       // 高血壓
   | 'diabetes'           // 糖尿病
@@ -25,13 +45,48 @@ export type HighRiskMedicationId =
   | 'supplements_herbal';// 常規保健品（魚油、銀杏、高劑量維生素等）
 
 export interface PatientContextProfile {
+  // 1. 基本體態
   ageGroup?: AgeGroup;
+  exactAge?: number;
   biologicalSex?: BiologicalSex;
+  heightCm?: number;
+  weightKg?: number;
   pregnancyStatus?: PregnancyPossibility;
+
+  // 2. 生活與風險習慣
+  smokingStatus?: SmokingStatus;
+  alcoholHabit?: AlcoholHabit;
+  betelNutHabit?: BetelNutHabit;
+  exerciseFrequency?: ExerciseFrequency;
+
+  // 3. 病史、過敏與家族史
   chronicConditions: ChronicConditionId[];
+  customChronicNote?: string;
+  drugAndFoodAllergies?: string;
+  familyHistory: FamilyHistoryConditionId[];
+
+  // 4. 目前用藥與保健品
   highRiskMedications: HighRiskMedicationId[];
   customMedicationNote?: string;
+
+  // 5. 近期特殊事件 (TOCC 與病程背景)
+  recentEventsTocc: RecentEventToccId[];
+  customToccNote?: string;
+
   updatedAt: string;
+}
+
+/** 頂部 API 連線設定條狀態 */
+export type GeminiModelOption =
+  | 'gemini-2.5-flash'
+  | 'gemini-2.5-pro'
+  | 'gemini-2.0-flash';
+
+export interface ApiConnectionSettings {
+  enabled: boolean;
+  apiKey: string;
+  modelId: GeminiModelOption;
+  rememberInLocalStorage: boolean;
 }
 
 /** 症狀深度層級 */
@@ -40,28 +95,48 @@ export type SymptomDepthLayer =
   | 'musculoskeletal'    // 肌肉與關節
   | 'deep_visceral';     // 身體深層（內臟或深部組織）
 
-/** 24 個 3D/2D 身體解剖分區 ID */
+/**
+ * 32 個全身無死角 3D/2D 解剖分區 ID
+ * - 頭頸與五官細分為 8 區：頭顱頭皮、眼部、耳部、鼻與鼻竇、口腔牙齒下顎、喉嚨咽喉、臉部皮膚顏面、頸部甲狀腺頸椎
+ * - 胸背軀幹含乳房與乳腺區
+ * - 腹部保留五分區
+ * - 下背骨盆與私密排泄含：下背腎區、下腹骨盆鼠蹊、臀部坐骨神經、生殖泌尿會陰區、肛門與直腸區
+ */
 export type BodyRegionId =
+  // 1. 頭頸與五官 (8 區)
   | 'head_cranial'
-  | 'face_sensory'
+  | 'eye_orbital'
+  | 'ear_auditory'
+  | 'nose_sinus'
+  | 'oral_dental_jaw'
   | 'neck_throat'
+  | 'face_sensory'
+  | 'neck_cervical_thyroid'
+  // 2. 胸部、乳房與上背 (4 區)
   | 'chest_left'
   | 'chest_right'
+  | 'breast_mammary'
   | 'upper_back'
+  // 3. 腹部精細五分區 (5 區)
   | 'abd_ruq'
   | 'abd_luq'
   | 'abd_epigastric'
   | 'abd_rlq'
   | 'abd_llq'
+  // 4. 下背、骨盆與私密排泄區 (5 區)
   | 'lower_back'
   | 'pelvis_groin'
   | 'buttocks_hip'
+  | 'urogenital_perineal'
+  | 'anal_rectal'
+  // 5. 上肢 (6 區)
   | 'shoulder_r'
   | 'shoulder_l'
   | 'upper_arm_elbow_r'
   | 'upper_arm_elbow_l'
   | 'forearm_wrist_hand_r'
   | 'forearm_wrist_hand_l'
+  // 6. 下肢 (4 區)
   | 'thigh_knee_r'
   | 'thigh_knee_l'
   | 'calf_ankle_foot_r'
@@ -88,6 +163,7 @@ export interface BodyRegionDefinition {
   groupNameZh: string;
   viewOrientation: ViewOrientation;
   clinicalFocusZh: string;
+  primarySpecialtiesTw: string[];
   defaultDepthLayer: SymptomDepthLayer;
   colloquialKeywords: string[];
   meshConfig: {
@@ -137,9 +213,10 @@ export interface SelectedRegionClinicalRecord {
   meshTermsEn: string[];
 }
 
-/** 模組 C-2：高完整度「全身性症狀」6 大系統分類 */
+/** 模組 C-2：高完整度「全身性症狀」7 大系統分類（新增獨立精神科／身心科與睡眠分類） */
 export type SystemicCategoryKey =
   | 'temp_metabolic'
+  | 'psychiatry_sleep'
   | 'neuro_psychiatric'
   | 'cardio_respiratory'
   | 'gi_excretory'

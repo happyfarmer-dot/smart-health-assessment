@@ -51,10 +51,11 @@ export async function fetchDynamicFollowUpQuestionsIsomorphic(
 }
 
 /**
- * 若使用者於前端設定了 Gemini API Key (選填)，可在確定性西醫鑑別骨架上補充更細膩的白話病生理與跨科解析
+ * 若使用者於頂部 API 設定列啟用了自訂 Gemini API Key，在確定性西醫鑑別骨架上補充更細膩的白話病生理與跨科解析
  */
 async function enhanceWithOptionalGeminiKey(
   apiKey: string,
+  modelId: string,
   payload: DiagnosisRequestPayload,
   basePrimary: PrimaryDiagnosisResult,
   baseDiff: DifferentialAndAnalysisResult
@@ -63,20 +64,35 @@ async function enhanceWithOptionalGeminiKey(
   diff: DifferentialAndAnalysisResult;
 }> {
   try {
-    const prompt = `你是一位資深現代西醫多專科會診 (MDT) 主治醫師。請根據以下患者資料與初步鑑別結果，以 JSON 格式微調強化「referredPainAndSystemicLinkZh（跨科轉移痛與全身關聯白話解析）」與第一順疑似疾病的「pathophysiologyPlainZh（白話病理機轉）」。
+    const cp = payload.contextProfile;
+    const bmiText =
+      cp.heightCm && cp.weightKg
+        ? `${cp.heightCm}cm / ${cp.weightKg}kg (BMI ${(
+            cp.weightKg /
+            ((cp.heightCm / 100) * (cp.heightCm / 100))
+          ).toFixed(1)})`
+        : '未填身高體重';
+
+    const prompt = `你是一位資深現代西醫多專科會診 (MDT) 主治醫師（涵蓋內外婦兒、眼科、耳鼻喉科、牙科／口腔顎面外科、精神科／身心科、乳房外科、大腸直腸外科、泌尿科、皮膚科、神經內外科、骨科／復健科、血液腫瘤科、感染科）。
+請根據以下患者完整生理情境卡與初步鑑別結果，以 JSON 格式微調強化「referredPainAndSystemicLinkZh（跨科轉移痛與全身關聯白話解析）」與第一順疑似疾病的「pathophysiologyPlainZh（白話病理機轉）」。
 嚴格遵守：
 1. 僅限現代實證西醫（嚴禁任何中醫詞彙）。
 2. 保持冷靜、客觀、一般大眾易懂的白話文。
 3. 僅回傳合法 JSON：{"enhancedPathophysiologyZh": "...", "enhancedReferredPainLinkZh": "..."}
 
-患者年齡/性別：${payload.contextProfile.ageGroup} / ${payload.contextProfile.biologicalSex}
+患者年齡/性別/體態：${cp.ageGroup} / ${cp.biologicalSex} / ${bmiText}
+生活習慣：抽菸(${cp.smokingStatus || 'never'})、飲酒(${cp.alcoholHabit || 'none'})、檳榔(${cp.betelNutHabit || 'never'})、運動(${cp.exerciseFrequency || 'moderate_1_2_week'})
+慢性病與家族史：慢性病(${cp.chronicConditions.join(',') || '無'} ${cp.customChronicNote || ''})、家族史(${(cp.familyHistory || []).join(',') || '無'})、過敏史(${cp.drugAndFoodAllergies || '無'})
+固定用藥與近期特殊事件(TOCC)：用藥(${cp.highRiskMedications.join(',') || '無'} ${cp.customMedicationNote || ''})、TOCC(${(cp.recentEventsTocc || []).join(',') || '無'} ${cp.customToccNote || ''})
 標記部位：${payload.regionRecords.map((r) => `${r.regionNameZh}(${r.depthLayer}): ${[...r.qualityLabelsZh, ...r.specificSymptomLabelsZh].join('、')}`).join('；')}
+全身症狀ID：${payload.systemicSymptomIds.join('、') || '無'}
 第一順疑似疾病：${basePrimary.topSuspectedDiseases[0]?.diseaseNameZh || ''} (${basePrimary.topSuspectedDiseases[0]?.diseaseNameEn || ''})`;
 
+    const targetModel = modelId || 'gemini-2.5-flash';
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
-        apiKey
-      )}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        targetModel
+      )}:generateContent?key=${encodeURIComponent(apiKey)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -100,7 +116,10 @@ async function enhanceWithOptionalGeminiKey(
       ...basePrimary,
       topSuspectedDiseases: basePrimary.topSuspectedDiseases.map((d, idx) =>
         idx === 0 && parsed.enhancedPathophysiologyZh
-          ? { ...d, pathophysiologyPlainZh: String(parsed.enhancedPathophysiologyZh) }
+          ? {
+              ...d,
+              pathophysiologyPlainZh: String(parsed.enhancedPathophysiologyZh),
+            }
           : d
       ),
     };
@@ -108,10 +127,9 @@ async function enhanceWithOptionalGeminiKey(
       ...baseDiff,
       mdtCrossSpecialtyAnalysis: {
         ...baseDiff.mdtCrossSpecialtyAnalysis,
-        referredPainAndSystemicLinkZh:
-          parsed.enhancedReferredPainLinkZh
-            ? String(parsed.enhancedReferredPainLinkZh)
-            : baseDiff.mdtCrossSpecialtyAnalysis.referredPainAndSystemicLinkZh,
+        referredPainAndSystemicLinkZh: parsed.enhancedReferredPainLinkZh
+          ? String(parsed.enhancedReferredPainLinkZh)
+          : baseDiff.mdtCrossSpecialtyAnalysis.referredPainAndSystemicLinkZh,
       },
     };
     return { primary: nextPrimary, diff: nextDiff };
@@ -128,7 +146,8 @@ async function enhanceWithOptionalGeminiKey(
 export async function runIsomorphicDiagnosisStream(
   payload: DiagnosisRequestPayload,
   callbacks: DiagnosisStreamCallbacks,
-  optionalGeminiApiKey?: string
+  optionalGeminiApiKey?: string,
+  optionalGeminiModelId: string = 'gemini-2.5-flash'
 ): Promise<void> {
   // 若使用者未填寫自訂 Gemini Key，先嘗試走 Next.js `/api/diagnose` SSE 串流
   if (!optionalGeminiApiKey?.trim()) {
@@ -212,6 +231,7 @@ export async function runIsomorphicDiagnosisStream(
     if (optionalGeminiApiKey?.trim()) {
       const enhanced = await enhanceWithOptionalGeminiKey(
         optionalGeminiApiKey.trim(),
+        optionalGeminiModelId,
         payload,
         primaryResult,
         differentialResult
