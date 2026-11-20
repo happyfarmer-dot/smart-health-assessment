@@ -4,6 +4,10 @@ import {
   SuspectedDiseaseDiagnosis,
   TargetedRuleOutRoundSummary,
 } from '@/types/cdss';
+import {
+  buildGeminiGenerateContentUrl,
+  normalizeGeminiModelId,
+} from './geminiUtils';
 
 export interface TargetedRuleOutQuestion {
   questionId: string;
@@ -114,7 +118,7 @@ export async function generateTargetedRuleOutQuestions(params: {
     };
   }
 
-  const targetModel = params.modelId || 'gemini-2.5-flash';
+  const targetModel = normalizeGeminiModelId(params.modelId);
   const regionSummary = params.payload
     ? params.payload.regionRecords
         .map(
@@ -157,9 +161,7 @@ ${candidatesSummary}
 {"questions": [{"questionId": "q1", "targetDiseaseId": "...", "targetDiseaseNameZh": "...", "questionTextZh": "...", "clinicalRationaleZh": "...", "options": [{"optionId": "yes", "labelZh": "符合（有此特徵）"}, {"optionId": "no", "labelZh": "不符合（確定沒有）"}, {"optionId": "uncertain", "labelZh": "不確定／尚未觀察"}]}]}`;
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-      targetModel
-    )}:generateContent?key=${encodeURIComponent(params.apiKey.trim())}`,
+    buildGeminiGenerateContentUrl(targetModel, params.apiKey),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -242,7 +244,7 @@ export async function recalculateDiagnosisWithRuleOut(params: {
   const top3 = params.primaryResult.topSuspectedDiseases;
 
   if (params.apiKey?.trim()) {
-    const targetModel = params.modelId || 'gemini-2.5-flash';
+    const targetModel = normalizeGeminiModelId(params.modelId);
     const prompt = `你是一位資深現代西醫主治醫師。請根據患者剛剛回答的「針對性確認／排除追問」結果，重新調整 Top 3 候選疾病的臨床吻合度百分比、排序、狀態徽章與綜合診斷信心度。
 
 目前綜合信心度：${beforePct}%
@@ -277,9 +279,7 @@ ${params.answers
 }`;
 
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-        targetModel
-      )}:generateContent?key=${encodeURIComponent(params.apiKey.trim())}`,
+      buildGeminiGenerateContentUrl(targetModel, params.apiKey),
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

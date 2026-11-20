@@ -1309,13 +1309,16 @@ export function AnatomicalHumanModel3D({
 }: AnatomicalHumanModel3DProps) {
   const {
     selectedRegions,
+    focusedRegionId,
     activeRegionId,
     hoveredRegionId,
+    setFocusedRegion,
     setActiveRegion,
     setHoveredRegion,
   } = useDiagnosisStore();
 
   const rootGroupRef = useRef<THREE.Group>(null);
+  const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const invRootMatrix = useMemo(() => new THREE.Matrix4(), []);
   const tempLocalPos = useMemo(() => new THREE.Vector3(), []);
   const tempWorldNrm = useMemo(() => new THREE.Vector3(), []);
@@ -1333,6 +1336,8 @@ export function AnatomicalHumanModel3D({
     };
   }, [surfaceOverlayMat]);
 
+  const highlightedRegionId = focusedRegionId ?? activeRegionId;
+
   // 同步 Uniforms 狀態
   useEffect(() => {
     surfaceOverlayMat.uniforms.uShowRegions.value = showRegionBoundaries
@@ -1344,8 +1349,8 @@ export function AnatomicalHumanModel3D({
         ? REGION_TO_SHADER_INDEX[hoveredRegionId] ?? -1.0
         : -1.0;
     surfaceOverlayMat.uniforms.uActiveIdx.value =
-      activeRegionId !== null
-        ? REGION_TO_SHADER_INDEX[activeRegionId] ?? -1.0
+      highlightedRegionId !== null
+        ? REGION_TO_SHADER_INDEX[highlightedRegionId] ?? -1.0
         : -1.0;
 
     const mask = new Array<number>(32).fill(0);
@@ -1361,7 +1366,7 @@ export function AnatomicalHumanModel3D({
     showRegionBoundaries,
     showOrganXray,
     hoveredRegionId,
-    activeRegionId,
+    highlightedRegionId,
     selectedRegions,
   ]);
 
@@ -1399,6 +1404,10 @@ export function AnatomicalHumanModel3D({
     return classifyBodyPointToRegion(nx, ny, nz, tempWorldNrm.z);
   };
 
+  const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
+    pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
+  };
+
   const handlePointerMove = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     const regionId = resolveEventRegionId(e);
@@ -1418,15 +1427,29 @@ export function AnatomicalHumanModel3D({
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
+    if (pointerDownPosRef.current) {
+      const dragDist = Math.hypot(
+        e.clientX - pointerDownPosRef.current.x,
+        e.clientY - pointerDownPosRef.current.y
+      );
+      if (dragDist > 6) {
+        return; // 旋轉或平移拖曳超過 6px，不觸發部位點擊
+      }
+    }
     const regionId = resolveEventRegionId(e);
-    if (regionId) {
+    if (!regionId) return;
+
+    // 兩段式點擊：第一下鎖定預覽 (focusedRegionId)，再點同一部位才開啟編輯選單 (activeRegionId)
+    if (focusedRegionId === regionId) {
       setActiveRegion(regionId);
+    } else {
+      setFocusedRegion(regionId);
     }
   };
 
   // Hover 時顯示浮動小標籤，若有已開啟彈窗則隱藏以免穿透遮擋
   const labelRegionId: BodyRegionId | null =
-    hoveredRegionId || activeRegionId || null;
+    hoveredRegionId || focusedRegionId || activeRegionId || null;
   const labelRegion = labelRegionId ? BODY_REGION_MAP[labelRegionId] : null;
   const rawLabelPos = labelRegionId
     ? getCanonicalRegionWorldCenter(labelRegionId)
@@ -1442,6 +1465,7 @@ export function AnatomicalHumanModel3D({
       ref={rootGroupRef}
       position={[0, -0.48 + yOffset, 0]}
       scale={[scaleMultiplier, scaleMultiplier, scaleMultiplier]}
+      onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerOut={handlePointerOut}
       onClick={handleClick}

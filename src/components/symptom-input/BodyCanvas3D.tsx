@@ -62,6 +62,7 @@ function CameraController({
     cameraOrientation,
     cameraFocusPreset,
     cameraResetCount,
+    focusedRegionId,
     activeRegionId,
     setCameraOrientation,
   } = useDiagnosisStore();
@@ -126,12 +127,12 @@ function CameraController({
       return;
     }
 
-    const fitHeight = H * 1.24; // 頭頂與腳底各留白約 10%
+    const fitHeight = H * 1.28; // 頭頂與腳底各留白約 12%
     const fitWidth = bounds.width * 1.15;
     const distV = fitHeight / 2 / tanHalfFov;
     const distH = fitWidth / 2 / (tanHalfFov * aspect);
     const dist = Math.max(distV, distH);
-    const fullTargetY = minY + H * 0.5;
+    const fullTargetY = minY + H * 0.51;
 
     animRef.current = {
       active: true,
@@ -151,9 +152,15 @@ function CameraController({
     size.height,
   ]);
 
-  // 1b. 明確點擊「轉背面 / 轉正面」按鈕時才平滑旋轉 180 度
+  // 1b. 明確點擊「轉背面 / 轉正面」按鈕時才平滑旋轉 180 度（並確保背面視角頭頂有完整留白）
   useEffect(() => {
     if (flipCommandSeq === 0 || !controlsRef.current) return;
+    const minY = bounds.minY;
+    const maxY = bounds.maxY;
+    const H = Math.max(0.5, maxY - minY);
+    const tanHalfFov = Math.tan(THREE.MathUtils.degToRad(40) / 2);
+    const minFullDist = (H * 1.28) / 2 / tanHalfFov;
+
     const target = animRef.current.active
       ? animRef.current.goalTarget.clone()
       : controlsRef.current.target.clone();
@@ -161,7 +168,11 @@ function CameraController({
       ? animRef.current.goalPos.clone()
       : camera.position.clone();
     const offset = pos.sub(target);
-    const horizDist = Math.max(0.45, Math.hypot(offset.x, offset.z));
+    let horizDist = Math.max(0.45, Math.hypot(offset.x, offset.z));
+    if (cameraFocusPreset === 'full_body') {
+      target.y = minY + H * 0.51;
+      horizDist = Math.max(horizDist, minFullDist);
+    }
     const nextSign = orientationRef.current === 'anterior' ? -1 : 1;
 
     animRef.current = {
@@ -169,16 +180,17 @@ function CameraController({
       goalTarget: target,
       goalPos: new THREE.Vector3(
         target.x,
-        target.y + offset.y,
+        target.y + Math.min(0.15, Math.max(-0.15, offset.y)),
         target.z + nextSign * horizDist
       ),
     };
-  }, [flipCommandSeq, camera]);
+  }, [flipCommandSeq, camera, cameraFocusPreset, bounds.minY, bounds.maxY]);
 
-  // 2. 動態焦點追蹤：點選特定部位時，平滑移動 OrbitControls.target 至該部位中心
+  // 2. 動態焦點追蹤：鎖定或點選特定部位時，平滑移動 OrbitControls.target 至該部位中心
+  const focusTrackId = focusedRegionId ?? activeRegionId;
   useEffect(() => {
-    if (!activeRegionId || !controlsRef.current) return;
-    const center = getCanonicalRegionWorldCenter(activeRegionId);
+    if (!focusTrackId || !controlsRef.current) return;
+    const center = getCanonicalRegionWorldCenter(focusTrackId);
     if (!center) return;
 
     const targetVec = new THREE.Vector3(center[0], center[1], center[2]);
@@ -193,7 +205,7 @@ function CameraController({
       goalTarget: targetVec,
       goalPos: targetVec.clone().add(currentOffset),
     };
-  }, [activeRegionId, camera]);
+  }, [focusTrackId, camera]);
 
   // 3. 快捷「＋ 放大 / － 縮小」按鈕平滑縮放（保持對準當前目標焦點）
   useEffect(() => {
@@ -316,11 +328,13 @@ export function BodyCanvas3D({
     setCameraOrientation,
     setCameraFocusPreset,
     triggerCameraReset,
+    focusedRegionId,
     activeRegionId,
     hoveredRegionId,
     selectedRegions,
     isFollowUpModalOpen,
     isApiModalOpen,
+    setFocusedRegion,
     setActiveRegion,
   } = useDiagnosisStore();
 
@@ -627,22 +641,39 @@ export function BodyCanvas3D({
           </div>
         )}
 
-        <div className="pointer-events-none absolute bottom-2 right-3 z-10">
-          <span className="text-[10px] text-slate-500/80">
-            3D Model: MakeHuman base mesh (CC0)
-            {modelStatus.resolvedVariant === 'male_morphed' &&
-              '・男性解剖變形模式（放入 human_body_male.glb 可替換獨立模型）'}
-            {modelStatus.resolvedVariant === 'default' &&
-              '・標準女性體態'}
-          </span>
-        </div>
+        {/* 兩段式點擊確認條（鎖定部位預覽 -> 再點一次或按按鈕開啟選單） */}
+        {focusedRegionId && !activeRegionId && BODY_REGION_MAP[focusedRegionId] && (
+          <div className="absolute bottom-2.5 left-3 right-28 sm:right-32 z-20 rounded-xl border border-cyan-400/70 bg-slate-950/92 px-3 py-2 shadow-2xl backdrop-blur-md flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-xs font-extrabold text-white truncate">
+                已點選：【{BODY_REGION_MAP[focusedRegionId].nameZh}】
+                <span className="text-[10px] font-semibold text-cyan-300 ml-1">
+                  （{BODY_REGION_MAP[focusedRegionId].groupNameZh}）
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">
+                確認部位無誤後，再點一次該部位即可開啟
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveRegion(focusedRegionId)}
+              className="rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-3 py-1.5 text-[11px] font-black shrink-0 shadow transition-colors cursor-pointer"
+            >
+              開啟症狀選單 →
+            </button>
+          </div>
+        )}
 
         <div className="absolute inset-0">
           <ThreeCanvasErrorBoundary>
             <Canvas
               dpr={[1, 2]}
               camera={{ position: [0, 0.03, 7.8], fov: 40 }}
-              onPointerMissed={() => setActiveRegion(null)}
+              onPointerMissed={() => {
+                setFocusedRegion(null);
+                setActiveRegion(null);
+              }}
             >
               {/* 1. 主光 (Key Light) */}
               <directionalLight
@@ -706,6 +737,17 @@ export function BodyCanvas3D({
 
       {/* 底部腹部五分區快捷定位（自動換行） */}
       <div className="relative z-10 p-3 sm:p-3.5 bg-slate-950/90 border-t border-slate-800/90 backdrop-blur-md space-y-2">
+        <div className="flex items-center justify-between text-[10px] text-slate-500/90 border-b border-slate-800/60 pb-1.5">
+          <span>
+            3D Model: MakeHuman base mesh (CC0)
+            {modelStatus.resolvedVariant === 'male_morphed' &&
+              '・男性解剖變形模式（放入 human_body_male.glb 可替換獨立模型）'}
+            {modelStatus.resolvedVariant === 'default' && '・標準女性體態'}
+          </span>
+          <span className="text-slate-400">
+            點擊部位一次鎖定預覽，再點一次開啟選單
+          </span>
+        </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] font-bold text-amber-400 flex items-center gap-1 mr-1">
             <Crosshair className="w-3.5 h-3.5" />

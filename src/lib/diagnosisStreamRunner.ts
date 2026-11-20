@@ -10,6 +10,10 @@ import { generateHypothesisDrivenQuestions } from './dynamicFollowUpGenerator';
 import { evaluateSilentSafetyCheck } from './safetyAndIatrogenicEngine';
 import { runDifferentialDiagnosisEngine } from './differentialDiagnosisEngine';
 import { fetchVerifiedPubMedResearch } from './pubmedService';
+import {
+  buildGeminiGenerateContentUrl,
+  normalizeGeminiModelId,
+} from './geminiUtils';
 
 export class GeminiApiExecutionError extends Error {
   httpStatus?: number;
@@ -160,14 +164,12 @@ async function enhanceWithOptionalGeminiKey(
       }
     }
 
-    const targetModel = modelId || 'gemini-2.5-flash';
+    const targetModel = normalizeGeminiModelId(modelId);
     const startMs = performance.now();
     let response: Response;
     try {
       response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-          targetModel
-        )}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        buildGeminiGenerateContentUrl(targetModel, apiKey),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

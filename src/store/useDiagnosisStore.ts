@@ -38,9 +38,11 @@ interface DiagnosisWorkbenchState {
   apiSettings: ApiConnectionSettings;
   isApiModalOpen: boolean;
   apiTestState: ApiConnectionTestState;
+  availableGeminiModels: string[];
   updateApiSettings: (partial: Partial<ApiConnectionSettings>) => void;
   setApiModalOpen: (open: boolean) => void;
   setApiTestState: (state: ApiConnectionTestState) => void;
+  setAvailableGeminiModels: (models: string[]) => void;
 
   // 模組 A：基礎生理情境卡 (Context Profile)
   contextProfile: PatientContextProfile;
@@ -53,6 +55,7 @@ interface DiagnosisWorkbenchState {
   cameraOrientation: CameraOrientation;
   cameraFocusPreset: CameraFocusPreset;
   cameraResetCount: number;
+  focusedRegionId: BodyRegionId | null;
   activeRegionId: BodyRegionId | null;
   hoveredRegionId: BodyRegionId | null;
 
@@ -72,6 +75,7 @@ interface DiagnosisWorkbenchState {
   toggleCameraOrientation: () => void;
   setCameraFocusPreset: (preset: CameraFocusPreset) => void;
   triggerCameraReset: () => void;
+  setFocusedRegion: (regionId: BodyRegionId | null) => void;
   setActiveRegion: (regionId: BodyRegionId | null) => void;
   setHoveredRegion: (regionId: BodyRegionId | null) => void;
 
@@ -181,6 +185,11 @@ export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
       apiSettings: DEFAULT_API_SETTINGS,
       isApiModalOpen: false,
       apiTestState: { status: 'idle' },
+      availableGeminiModels: [
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
+        'gemini-2.0-flash',
+      ],
       updateApiSettings: (partial) =>
         set((state) => {
           const next = { ...state.apiSettings, ...partial };
@@ -218,6 +227,8 @@ export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
         }),
       setApiModalOpen: (open) => set({ isApiModalOpen: open }),
       setApiTestState: (apiTestState) => set({ apiTestState }),
+      setAvailableGeminiModels: (availableGeminiModels) =>
+        set({ availableGeminiModels }),
 
       contextProfile: DEFAULT_CONTEXT_PROFILE,
       isProfileExpanded: false,
@@ -250,6 +261,7 @@ export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
       cameraOrientation: 'anterior',
       cameraFocusPreset: 'full_body',
       cameraResetCount: 0,
+      focusedRegionId: null,
       activeRegionId: null,
       hoveredRegionId: null,
       selectedRegions: {},
@@ -272,6 +284,8 @@ export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
           cameraResetCount: state.cameraResetCount + 1,
         })),
 
+      setFocusedRegion: (regionId) => set({ focusedRegionId: regionId }),
+
       setActiveRegion: (regionId) => {
         if (!regionId) {
           set({ activeRegionId: null });
@@ -286,6 +300,7 @@ export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
             nextOrientation = 'anterior';
           }
           return {
+            focusedRegionId: regionId,
             activeRegionId: regionId,
             cameraOrientation: nextOrientation,
           };

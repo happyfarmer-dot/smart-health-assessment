@@ -17,28 +17,28 @@ import {
 } from 'lucide-react';
 import { useDiagnosisStore } from '@/store/useDiagnosisStore';
 import { GeminiModelOption } from '@/types/cdss';
-
-const PRESET_MODEL_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (推薦・極速多模態臨床推理)' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (深度跨科病生理推理)' },
-  { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite (輕量高速)' },
-  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (相容模型)' },
-];
+import {
+  buildGeminiGenerateContentUrl,
+  fetchAvailableGeminiModels,
+  normalizeGeminiModelId,
+} from '@/lib/geminiUtils';
 
 export function TopApiControlBar() {
   const {
     apiSettings,
     isApiModalOpen,
     apiTestState,
+    availableGeminiModels,
     updateApiSettings,
     setApiModalOpen,
     setApiTestState,
+    setAvailableGeminiModels,
   } = useDiagnosisStore();
   const [showKeyPlain, setShowKeyPlain] = useState(false);
   const [customModelInput, setCustomModelInput] = useState('');
   const [useCustomModelInput, setUseCustomModelInput] = useState(false);
 
-  // 初始化時同步 sessionStorage（若為僅本次工作階段記憶模式）與自訂模型狀態
+  // 初始化時同步 sessionStorage（若為僅本次工作階段記憶模式）
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -51,7 +51,7 @@ export function TopApiControlBar() {
           updateApiSettings({
             enabled: Boolean(parsed.enabled),
             apiKey: String(parsed.apiKey || ''),
-            modelId: (parsed.modelId as GeminiModelOption) || 'gemini-2.5-flash',
+            modelId: normalizeGeminiModelId(parsed.modelId),
             rememberInLocalStorage:
               parsed.rememberInLocalStorage === undefined
                 ? true
@@ -66,14 +66,11 @@ export function TopApiControlBar() {
   }, []);
 
   useEffect(() => {
-    const isPreset = PRESET_MODEL_OPTIONS.some(
-      (m) => m.value === apiSettings.modelId
-    );
-    if (!isPreset && apiSettings.modelId) {
-      setUseCustomModelInput(true);
-      setCustomModelInput(apiSettings.modelId);
+    const clean = normalizeGeminiModelId(apiSettings.modelId);
+    if (availableGeminiModels.length > 0 && !availableGeminiModels.includes(clean)) {
+      setCustomModelInput(clean);
     }
-  }, [apiSettings.modelId]);
+  }, [apiSettings.modelId, availableGeminiModels]);
 
   // 支援 ESC 鍵關閉 API 設定彈窗
   useEffect(() => {
@@ -87,12 +84,37 @@ export function TopApiControlBar() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isApiModalOpen, setApiModalOpen]);
 
+  const pingModel = async (
+    modelId: string,
+    apiKey: string
+  ): Promise<{ ok: true; latencyMs: number } | { ok: false; status: number; message: string }> => {
+    const start = performance.now();
+    const res = await fetch(buildGeminiGenerateContentUrl(modelId, apiKey), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: 'ping' }] }],
+        generationConfig: { maxOutputTokens: 4 },
+      }),
+    });
+    const latencyMs = Math.round(performance.now() - start);
+    if (res.ok) {
+      return { ok: true, latencyMs };
+    }
+    let msg = `HTTP ${res.status}`;
+    try {
+      const errJson = await res.json();
+      if (errJson?.error?.message) {
+        msg = `HTTP ${res.status}：${errJson.error.message}`;
+      }
+    } catch {
+      // ignore
+    }
+    return { ok: false, status: res.status, message: msg };
+  };
+
   const handleSaveAndTestConnection = async () => {
     const trimmedKey = apiSettings.apiKey.trim();
-    const targetModel = (
-      useCustomModelInput ? customModelInput : apiSettings.modelId
-    ).trim() || 'gemini-2.5-flash';
-
     if (!trimmedKey || trimmedKey.length < 12) {
       setApiTestState({
         status: 'error',
@@ -101,64 +123,57 @@ export function TopApiControlBar() {
       return;
     }
 
-    updateApiSettings({
-      apiKey: trimmedKey,
-      modelId: targetModel,
-    });
-
     setApiTestState({
       status: 'testing',
-      messageZh: `正在驗證金鑰與模型 (${targetModel})...`,
+      messageZh: '正在向 Google API 偵測此金鑰可用的最新 Gemini 模型清單...',
     });
-    const start = performance.now();
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-          targetModel
-        )}:generateContent?key=${encodeURIComponent(trimmedKey)}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: 'ping' }] }],
-            generationConfig: { maxOutputTokens: 4 },
-          }),
-        }
-      );
-      const latencyMs = Math.round(performance.now() - start);
 
-      if (!res.ok) {
-        let errReason = `HTTP ${res.status}`;
-        try {
-          const errJson = await res.json();
-          const msg = errJson?.error?.message || '';
-          if (
-            res.status === 400 ||
-            res.status === 401 ||
-            msg.toLowerCase().includes('api key')
-          ) {
-            errReason = `HTTP ${res.status}：API Key 無效或格式錯誤 (${msg})`;
-          } else if (res.status === 404) {
-            errReason = `HTTP 404：找不到模型「${targetModel}」，請切換或手動輸入有效模型 ID`;
-          } else if (res.status === 403) {
-            errReason = `HTTP 403：權限不足或 Generative Language API 未啟用`;
-          } else if (res.status === 429) {
-            errReason = `HTTP 429：API 額度或速率已達上限 (${msg})`;
-          } else if (msg) {
-            errReason = `HTTP ${res.status}：${msg}`;
-          }
-        } catch {
-          // keep status code
+    try {
+      // Step 1: 動態拉取此 API Key 真實可用的 generateContent 模型清單
+      const discovered = await fetchAvailableGeminiModels(trimmedKey);
+      if (discovered.models.length > 0) {
+        setAvailableGeminiModels(discovered.models);
+      }
+
+      const requestedModel = normalizeGeminiModelId(
+        useCustomModelInput ? customModelInput : apiSettings.modelId
+      );
+
+      // 若目前模型不在清單中且非手動自訂，自動切換至清單中最新推薦模型
+      let targetModel =
+        useCustomModelInput ||
+        discovered.models.length === 0 ||
+        discovered.models.includes(requestedModel)
+          ? requestedModel
+          : discovered.recommendedModel;
+
+      setApiTestState({
+        status: 'testing',
+        messageZh: `已偵測 ${discovered.models.length} 個可用模型，正在測試 ${targetModel}...`,
+      });
+
+      // Step 2: 實測 :generateContent
+      let ping = await pingModel(targetModel, trimmedKey);
+
+      // 若指定模型回傳 404 且清單中有其他推薦模型，自動切換並再試一次
+      if (!ping.ok && ping.status === 404 && discovered.models.length > 0) {
+        const fallbackModel = discovered.models.find((m) => m !== targetModel);
+        if (fallbackModel) {
+          targetModel = fallbackModel;
+          ping = await pingModel(targetModel, trimmedKey);
         }
+      }
+
+      if (!ping.ok) {
         setApiTestState({
           status: 'error',
-          latencyMs,
-          messageZh: `連線失敗（${errReason}）`,
+          messageZh: `連線失敗（模型 ${targetModel}・${ping.message}）`,
         });
         return;
       }
 
-      // 連線測試通過：自動強制啟用 Gemini AI 深度模式
+      // Step 3: 測試通過，自動儲存並啟用 Gemini AI 深度模式
+      setUseCustomModelInput(false);
       updateApiSettings({
         enabled: true,
         apiKey: trimmedKey,
@@ -167,22 +182,22 @@ export function TopApiControlBar() {
 
       setApiTestState({
         status: 'success',
-        latencyMs,
-        messageZh: `驗證成功（${latencyMs} ms・已自動啟用 ${targetModel} 深度臨床推理）`,
+        latencyMs: ping.latencyMs,
+        verifiedModelsCount: discovered.models.length,
+        messageZh: `連線成功（${ping.latencyMs} ms・已自動啟用 ${targetModel}，共偵測 ${discovered.models.length} 個可用模型）`,
       });
     } catch (err) {
-      const latencyMs = Math.round(performance.now() - start);
       const errMsg = err instanceof Error ? err.message : '網路連線異常';
       setApiTestState({
         status: 'error',
-        latencyMs,
-        messageZh: `網路異常或 CORS 阻擋（${errMsg}）`,
+        messageZh: `偵測模型清單失敗（${errMsg}）`,
       });
     }
   };
 
   const hasValidKey = apiSettings.apiKey.trim().length >= 12;
   const isGeminiActive = apiSettings.enabled && hasValidKey;
+  const cleanCurrentModel = normalizeGeminiModelId(apiSettings.modelId);
 
   const statusConfig =
     isGeminiActive && apiTestState.status === 'success'
@@ -190,21 +205,21 @@ export function TopApiControlBar() {
           dotClass: 'bg-emerald-400 shadow-[0_0_10px_#34d399]',
           textClass: 'text-emerald-300',
           barClass: 'border-emerald-500/40 bg-emerald-950/35',
-          label: `Gemini AI 深度模式（${apiSettings.modelId}・已驗證 ${apiTestState.latencyMs ?? ''}ms）`,
+          label: `Gemini AI 深度模式（${cleanCurrentModel}・已驗證 ${apiTestState.latencyMs ?? ''}ms）`,
         }
       : isGeminiActive && apiTestState.status === 'error'
       ? {
           dotClass: 'bg-rose-500 shadow-[0_0_8px_#f43f5e]',
           textClass: 'text-rose-300',
           barClass: 'border-rose-500/40 bg-rose-950/30',
-          label: `Gemini AI 連線異常（${apiSettings.modelId}・點擊右側檢查）`,
+          label: `Gemini AI 連線異常（${cleanCurrentModel}・點擊右側檢查）`,
         }
       : isGeminiActive
       ? {
           dotClass: 'bg-emerald-400 shadow-[0_0_8px_#34d399]',
           textClass: 'text-emerald-300',
           barClass: 'border-emerald-500/35 bg-slate-900/90',
-          label: `Gemini AI 深度模式（${apiSettings.modelId}・建議按測試驗證）`,
+          label: `Gemini AI 深度模式（${cleanCurrentModel}・點擊右側可測試偵測模型）`,
         }
       : {
           dotClass: 'bg-slate-400',
@@ -302,52 +317,6 @@ export function TopApiControlBar() {
             </label>
 
             <div className="space-y-3">
-              {/* 模型選擇 + 手動輸入自訂模型 ID */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-300">
-                    <Cpu className="h-3.5 w-3.5 text-cyan-400" />
-                    選擇或指定 Gemini 模型 ID
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setUseCustomModelInput((p) => !p)}
-                    className="text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 cursor-pointer"
-                  >
-                    {useCustomModelInput ? '切回預設清單' : '手動輸入模型 ID'}
-                  </button>
-                </div>
-
-                {useCustomModelInput ? (
-                  <input
-                    type="text"
-                    value={customModelInput}
-                    onChange={(e) => {
-                      setCustomModelInput(e.target.value);
-                      updateApiSettings({ modelId: e.target.value.trim() });
-                    }}
-                    placeholder="例如：gemini-2.5-flash 或 gemini-2.5-pro"
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
-                  />
-                ) : (
-                  <select
-                    value={apiSettings.modelId}
-                    onChange={(e) =>
-                      updateApiSettings({
-                        modelId: e.target.value as GeminiModelOption,
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 focus:border-cyan-500 focus:outline-none"
-                  >
-                    {PRESET_MODEL_OPTIONS.map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
               {/* 密碼遮罩輸入框 + 儲存並測試連線按鈕 */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300 block">
@@ -391,36 +360,90 @@ export function TopApiControlBar() {
                     )}
                     <span>
                       {apiTestState.status === 'testing'
-                        ? '驗證中...'
+                        ? '偵測驗證中...'
                         : '儲存並測試連線'}
                     </span>
                   </button>
                 </div>
+              </div>
 
-                {/* 連線測試即時結果回饋 */}
-                {apiTestState.status !== 'idle' && (
-                  <div
-                    className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs ${
-                      apiTestState.status === 'success'
-                        ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200'
-                        : apiTestState.status === 'error'
-                        ? 'border-rose-500/40 bg-rose-950/40 text-rose-200'
-                        : 'border-cyan-500/30 bg-cyan-950/30 text-cyan-200'
-                    }`}
+              {/* 動態偵測模型選單 + 手動輸入自訂模型 ID */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-300">
+                    <Cpu className="h-3.5 w-3.5 text-cyan-400" />
+                    選擇 Gemini 模型 ID（共 {availableGeminiModels.length} 項可用）
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setUseCustomModelInput((p) => !p)}
+                    className="text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 cursor-pointer"
                   >
-                    {apiTestState.status === 'success' ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                    ) : apiTestState.status === 'error' ? (
-                      <XCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-                    ) : (
-                      <Loader2 className="h-4 w-4 text-cyan-400 animate-spin shrink-0 mt-0.5" />
-                    )}
-                    <span className="leading-snug font-medium">
-                      {apiTestState.messageZh}
-                    </span>
-                  </div>
+                    {useCustomModelInput ? '切回動態偵測清單' : '手動輸入模型 ID'}
+                  </button>
+                </div>
+
+                {useCustomModelInput ? (
+                  <input
+                    type="text"
+                    value={customModelInput}
+                    onChange={(e) => {
+                      setCustomModelInput(e.target.value);
+                      updateApiSettings({
+                        modelId: normalizeGeminiModelId(e.target.value),
+                      });
+                    }}
+                    placeholder="例如：gemini-2.5-flash 或 gemini-2.0-flash"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
+                  />
+                ) : (
+                  <select
+                    value={
+                      availableGeminiModels.includes(cleanCurrentModel)
+                        ? cleanCurrentModel
+                        : availableGeminiModels[0] || cleanCurrentModel
+                    }
+                    onChange={(e) =>
+                      updateApiSettings({
+                        modelId: normalizeGeminiModelId(
+                          e.target.value
+                        ) as GeminiModelOption,
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
+                  >
+                    {availableGeminiModels.map((mId) => (
+                      <option key={mId} value={mId}>
+                        {mId}
+                      </option>
+                    ))}
+                  </select>
                 )}
               </div>
+
+              {/* 連線測試即時結果回饋 */}
+              {apiTestState.status !== 'idle' && (
+                <div
+                  className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs ${
+                    apiTestState.status === 'success'
+                      ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200'
+                      : apiTestState.status === 'error'
+                      ? 'border-rose-500/40 bg-rose-950/40 text-rose-200'
+                      : 'border-cyan-500/30 bg-cyan-950/30 text-cyan-200'
+                  }`}
+                >
+                  {apiTestState.status === 'success' ? (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                  ) : apiTestState.status === 'error' ? (
+                    <XCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                  ) : (
+                    <Loader2 className="h-4 w-4 text-cyan-400 animate-spin shrink-0 mt-0.5" />
+                  )}
+                  <span className="leading-snug font-medium">
+                    {apiTestState.messageZh}
+                  </span>
+                </div>
+              )}
 
               {/* 持久化策略選項（預設記住於 localStorage，可切換僅本次工作階段） */}
               <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none bg-slate-950/70 border border-slate-800 px-3 py-2 rounded-xl">
