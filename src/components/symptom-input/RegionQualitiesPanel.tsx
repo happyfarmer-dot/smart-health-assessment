@@ -322,9 +322,9 @@ export function RegionQualitiesPanel({
             <div className="flex-1 grid grid-cols-3 gap-1 p-1 bg-slate-950 rounded-xl border border-slate-800">
               {(
                 [
-                  { key: 'pain_qualities', label: '疼痛 (11)' },
-                  { key: 'abnormal_sensations', label: '異常感 (6)' },
-                  { key: 'structural_functional', label: '結構/功能 (7)' },
+                  { key: 'pain_qualities', label: '疼痛性質' },
+                  { key: 'abnormal_sensations', label: '異常感覺' },
+                  { key: 'structural_functional', label: '結構與功能' },
                 ] as const
               ).map((tab) => {
                 const countInCat = DISCOMFORT_QUALITIES_CATALOG.filter(
@@ -337,13 +337,13 @@ export function RegionQualitiesPanel({
                     key={tab.key}
                     type="button"
                     onClick={() => setActiveQualityTab(tab.key)}
-                    className={`py-1.5 px-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 ${
+                    className={`py-1.5 px-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       active
                         ? 'bg-slate-800 text-cyan-300 border border-cyan-500/40 shadow-sm'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    <span className="truncate">{tab.label}</span>
+                    <span>{tab.label}</span>
                     {countInCat > 0 && (
                       <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-cyan-500 text-slate-950 font-black">
                         {countInCat}
@@ -355,7 +355,7 @@ export function RegionQualitiesPanel({
             </div>
           ) : (
             <div className="flex-1 text-[11px] font-semibold text-cyan-300 px-1">
-              已展開全部 24 項感受（依 3 大類分組）
+              已展開全部感受（依 3 大類分組）
             </div>
           )}
 
@@ -406,13 +406,13 @@ export function RegionQualitiesPanel({
                             <Square className="w-3.5 h-3.5 text-slate-600 shrink-0 mt-0.5" />
                           )}
                           <div className="min-w-0 flex-1">
-                            <div className="text-[11px] font-bold leading-snug flex items-center justify-between gap-1">
-                              <span className="truncate">{qItem.labelZh}</span>
+                            <div className="text-[11px] font-bold leading-snug flex items-start justify-between gap-1">
+                              <span className="break-words">{qItem.labelZh}</span>
                               {qItem.isRedFlagWeight && (
-                                <AlertCircle className="w-3 h-3 text-rose-400 shrink-0" />
+                                <AlertCircle className="w-3 h-3 text-rose-400 shrink-0 mt-0.5" />
                               )}
                             </div>
-                            <div className="text-[10px] text-slate-500 font-mono truncate">
+                            <div className="text-[9px] text-slate-500 font-mono leading-tight mt-0.5 break-words">
                               {qItem.clinicalTermEn}
                             </div>
                           </div>
@@ -453,13 +453,13 @@ export function RegionQualitiesPanel({
                       <Square className="w-3.5 h-3.5 text-slate-600 shrink-0 mt-0.5" />
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="text-[11px] font-bold leading-snug flex items-center justify-between gap-1">
-                        <span className="truncate">{qItem.labelZh}</span>
+                      <div className="text-[11px] font-bold leading-snug flex items-start justify-between gap-1">
+                        <span className="break-words">{qItem.labelZh}</span>
                         {qItem.isRedFlagWeight && (
-                          <AlertCircle className="w-3 h-3 text-rose-400 shrink-0" />
+                          <AlertCircle className="w-3 h-3 text-rose-400 shrink-0 mt-0.5" />
                         )}
                       </div>
-                      <div className="text-[10px] text-slate-500 font-mono truncate">
+                      <div className="text-[9px] text-slate-500 font-mono leading-tight mt-0.5 break-words">
                         {qItem.clinicalTermEn}
                       </div>
                     </div>

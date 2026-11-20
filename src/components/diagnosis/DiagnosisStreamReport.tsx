@@ -26,12 +26,19 @@ import {
   XCircle,
 } from 'lucide-react';
 import {
+  DiagnosisRequestPayload,
   DifferentialAndAnalysisResult,
   EvidenceLevelTag,
   PrimaryDiagnosisResult,
   PubMedResearchResult,
   SafetyCheckResult,
 } from '@/types/cdss';
+import {
+  generateTargetedRuleOutQuestions,
+  recalculateDiagnosisWithRuleOut,
+  TargetedRuleOutAnswer,
+  TargetedRuleOutQuestion,
+} from '@/lib/targetedRuleOutEngine';
 import { GlossaryLegendBadge, GlossaryText } from './GlossaryText';
 import { TopThreeComparisonMatrix } from './TopThreeComparisonMatrix';
 
@@ -42,7 +49,10 @@ interface DiagnosisStreamReportProps {
   differentialResult: DifferentialAndAnalysisResult | null;
   pubmedResult: PubMedResearchResult | null;
   optionalGeminiKey: string;
+  optionalGeminiModelId?: string;
   onChangeGeminiKey: (key: string) => void;
+  diagnosisPayload?: DiagnosisRequestPayload | null;
+  onUpdatePrimaryResult?: (next: PrimaryDiagnosisResult) => void;
   assessedAt?: string;
   contextSummaryZh?: string;
 }
@@ -63,7 +73,10 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
   differentialResult,
   pubmedResult,
   optionalGeminiKey,
+  optionalGeminiModelId,
   onChangeGeminiKey,
+  diagnosisPayload,
+  onUpdatePrimaryResult,
   assessedAt,
   contextSummaryZh,
 }) => {
@@ -76,6 +89,101 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
     Record<string, boolean>
   >({});
   const [showApiKeyConfig, setShowApiKeyConfig] = useState(false);
+
+  // Final Targeted Rule-Out state (最多 2 輪)
+  const [ruleOutOpen, setRuleOutOpen] = useState(false);
+  const [ruleOutLoading, setRuleOutLoading] = useState(false);
+  const [ruleOutRecalculating, setRuleOutRecalculating] = useState(false);
+  const [ruleOutError, setRuleOutError] = useState<string | null>(null);
+  const [ruleOutMode, setRuleOutMode] = useState<'top3_overall' | 'single_disease'>(
+    'top3_overall'
+  );
+  const [ruleOutTargetDiseaseName, setRuleOutTargetDiseaseName] = useState<
+    string | undefined
+  >(undefined);
+  const [ruleOutQuestions, setRuleOutQuestions] = useState<
+    TargetedRuleOutQuestion[]
+  >([]);
+  const [ruleOutSelectedMap, setRuleOutSelectedMap] = useState<
+    Record<string, 'yes' | 'no' | 'uncertain'>
+  >({});
+
+  const ruleOutRoundsUsed = primaryResult?.targetedRuleOutHistory?.length || 0;
+
+  const handleStartTargetedRuleOut = async (focusDiseaseId?: string) => {
+    if (!primaryResult || ruleOutRoundsUsed >= 2) return;
+    const focusDx = focusDiseaseId
+      ? primaryResult.topSuspectedDiseases.find(
+          (d) => d.diseaseId === focusDiseaseId
+        )
+      : undefined;
+
+    setRuleOutOpen(true);
+    setRuleOutLoading(true);
+    setRuleOutError(null);
+    setRuleOutMode(focusDx ? 'single_disease' : 'top3_overall');
+    setRuleOutTargetDiseaseName(focusDx?.diseaseNameZh);
+    setRuleOutQuestions([]);
+    setRuleOutSelectedMap({});
+
+    try {
+      const res = await generateTargetedRuleOutQuestions({
+        payload: diagnosisPayload || null,
+        primaryResult,
+        focusDiseaseId,
+        apiKey: optionalGeminiKey,
+        modelId: optionalGeminiModelId,
+      });
+      setRuleOutQuestions(res.questions);
+    } catch (err) {
+      setRuleOutError(
+        err instanceof Error ? err.message : '無法產生針對性排除追問，請重試。'
+      );
+    } finally {
+      setRuleOutLoading(false);
+    }
+  };
+
+  const handleSubmitTargetedRuleOut = async () => {
+    if (!primaryResult || ruleOutQuestions.length === 0) return;
+    setRuleOutRecalculating(true);
+    setRuleOutError(null);
+
+    const answers: TargetedRuleOutAnswer[] = ruleOutQuestions.map((q) => {
+      const chosen = ruleOutSelectedMap[q.questionId] || 'uncertain';
+      const opt = q.options.find((o) => o.optionId === chosen) || q.options[2];
+      return {
+        questionId: q.questionId,
+        targetDiseaseId: q.targetDiseaseId,
+        questionTextZh: q.questionTextZh,
+        selectedOptionId: chosen,
+        selectedLabelZh: opt?.labelZh || '不確定',
+      };
+    });
+
+    try {
+      const nextPrimary = await recalculateDiagnosisWithRuleOut({
+        primaryResult,
+        answers,
+        roundNumber: ruleOutRoundsUsed + 1,
+        targetMode: ruleOutMode,
+        targetDiseaseNameZh: ruleOutTargetDiseaseName,
+        apiKey: optionalGeminiKey,
+        modelId: optionalGeminiModelId,
+      });
+      onUpdatePrimaryResult?.(nextPrimary);
+      setRuleOutOpen(false);
+      setRuleOutQuestions([]);
+    } catch (err) {
+      setRuleOutError(
+        err instanceof Error
+          ? err.message
+          : '重新計算鑑別與信心度失敗，請重試。'
+      );
+    } finally {
+      setRuleOutRecalculating(false);
+    }
+  };
 
   const hasAnyReportData =
     Boolean(safetyResult) ||
@@ -103,6 +211,19 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
                     會診推論中
                   </span>
                 )}
+                {primaryResult?.engineMeta?.source === 'gemini_ai' ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-400/50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-300">
+                    ✨ Gemini AI（{primaryResult.engineMeta.modelId || 'gemini'}
+                    {primaryResult.engineMeta.totalTokens
+                      ? `・${primaryResult.engineMeta.totalTokens} Tokens`
+                      : ''}
+                    ）生成
+                  </span>
+                ) : primaryResult ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-800 border border-slate-700 px-2.5 py-0.5 text-[11px] font-semibold text-slate-300">
+                    ⚙️ 離線基礎規則引擎生成
+                  </span>
+                ) : null}
               </div>
               <h2 className="text-lg sm:text-xl font-black text-white mt-1">
                 多專科會診 (MDT) 臨床評估報告書
@@ -460,6 +581,16 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
                               <h4 className="text-base sm:text-lg font-extrabold text-slate-100">
                                 {dx.diseaseNameZh}
                               </h4>
+                              {dx.ruleOutTrend === 'reinforced' && (
+                                <span className="rounded-full border border-emerald-400/60 bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-300">
+                                  證據強化（可能性上升）
+                                </span>
+                              )}
+                              {dx.ruleOutTrend === 'ruled_down' && (
+                                <span className="rounded-full border border-amber-400/50 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-extrabold text-amber-300">
+                                  已透過追問降低可能性／初步排除
+                                </span>
+                              )}
                             </div>
                             <div className="text-xs font-mono text-cyan-400/90 pl-8">
                               {dx.diseaseNameEn}
@@ -595,11 +726,190 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
                                 )}
                               </div>
                             </div>
+
+                            {/* 單一疾病深挖入口 */}
+                            {ruleOutRoundsUsed < 2 && onUpdatePrimaryResult && (
+                              <div className="no-print flex justify-end pt-1">
+                                <button
+                                  type="button"
+                                  disabled={ruleOutLoading || ruleOutRecalculating}
+                                  onClick={() =>
+                                    handleStartTargetedRuleOut(dx.diseaseId)
+                                  }
+                                  className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 px-3 py-1.5 text-xs font-bold text-cyan-200 transition-colors cursor-pointer disabled:opacity-50"
+                                >
+                                  <HelpCircle className="w-3.5 h-3.5 text-cyan-400" />
+                                  <span>針對此疾病進行確認／排除追問</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                     );
                   })}
+                </div>
+
+                {/* AI 針對性排除與信心度強化 (Final Targeted Rule-Out) */}
+                <div className="no-print rounded-2xl border border-cyan-500/35 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950/25 p-4 sm:p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="text-xs sm:text-sm font-black text-cyan-300 flex items-center gap-2">
+                        <Gauge className="w-4 h-4 text-cyan-400 shrink-0" />
+                        <span>
+                          AI 針對性排除與信心度強化（Final Targeted Rule-Out · 已完成 {ruleOutRoundsUsed}/2 輪）
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        針對 Top 3 候選疾病尚未確認的關鍵鑑別點進行 3～4 題聚焦追問，立即重算吻合度與綜合信心度。
+                      </p>
+                    </div>
+
+                    {ruleOutRoundsUsed < 2 && onUpdatePrimaryResult && !ruleOutOpen && (
+                      <button
+                        type="button"
+                        disabled={ruleOutLoading}
+                        onClick={() => handleStartTargetedRuleOut()}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-4 py-2.5 text-xs font-black shadow-lg shadow-cyan-950/50 transition-colors shrink-0 cursor-pointer disabled:opacity-60"
+                      >
+                        <HelpCircle className="w-4 h-4" />
+                        <span>啟動 AI 針對性排除詢問（區分 Top 3 疾病，提升判讀信心度）</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 歷次排除追問信心度變化對比 */}
+                  {primaryResult.targetedRuleOutHistory &&
+                    primaryResult.targetedRuleOutHistory.length > 0 && (
+                      <div className="space-y-2.5">
+                        {primaryResult.targetedRuleOutHistory.map((round) => (
+                          <div
+                            key={round.roundNumber}
+                            className="rounded-xl border border-emerald-500/35 bg-emerald-950/20 p-3.5 space-y-1.5 text-xs"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-extrabold text-emerald-300">
+                                第 {round.roundNumber} 輪排除強化
+                                {round.targetDiseaseNameZh
+                                  ? `（聚焦：${round.targetDiseaseNameZh}）`
+                                  : '（Top 3 綜合區分）'}
+                              </span>
+                              <span className="rounded-full bg-emerald-500/20 border border-emerald-400/50 px-2.5 py-0.5 font-mono font-black text-emerald-200">
+                                綜合判讀信心度 {round.confidenceBeforePct}% →{' '}
+                                {round.confidenceAfterPct}% (+
+                                {round.confidenceDeltaPct}%)
+                              </span>
+                            </div>
+                            <p className="text-slate-200 leading-relaxed">
+                              {round.reasoningSummaryZh}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                  {/* 互動式 3～4 題確認／排除專用問卷 */}
+                  {ruleOutOpen && (
+                    <div className="rounded-xl border border-slate-700 bg-slate-950/90 p-4 space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                        <span className="text-xs font-extrabold text-white">
+                          第 {ruleOutRoundsUsed + 1} 輪確認／排除專用追問
+                          {ruleOutTargetDiseaseName
+                            ? ` — ${ruleOutTargetDiseaseName}`
+                            : ' — 區分 Top 3 疾病'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setRuleOutOpen(false)}
+                          className="text-xs text-slate-400 hover:text-white cursor-pointer"
+                        >
+                          取消
+                        </button>
+                      </div>
+
+                      {ruleOutLoading && (
+                        <div className="flex items-center gap-2 py-4 text-xs text-cyan-300">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>正在生成針對性確認／排除追問...</span>
+                        </div>
+                      )}
+
+                      {ruleOutError && (
+                        <div className="rounded-xl border border-rose-500/40 bg-rose-950/40 p-3 text-xs text-rose-200">
+                          {ruleOutError}
+                        </div>
+                      )}
+
+                      {!ruleOutLoading && ruleOutQuestions.length > 0 && (
+                        <div className="space-y-3">
+                          {ruleOutQuestions.map((q, qIdx) => {
+                            const chosen = ruleOutSelectedMap[q.questionId];
+                            return (
+                              <div
+                                key={q.questionId}
+                                className="rounded-xl border border-slate-800 bg-slate-900/75 p-3.5 space-y-2"
+                              >
+                                <div className="text-xs font-bold text-slate-100">
+                                  {qIdx + 1}. {q.questionTextZh}
+                                </div>
+                                {q.clinicalRationaleZh && (
+                                  <div className="text-[11px] text-slate-400">
+                                    臨床意義：{q.clinicalRationaleZh}
+                                  </div>
+                                )}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                                  {q.options.map((opt) => {
+                                    const active = chosen === opt.optionId;
+                                    return (
+                                      <button
+                                        key={opt.optionId}
+                                        type="button"
+                                        onClick={() =>
+                                          setRuleOutSelectedMap((prev) => ({
+                                            ...prev,
+                                            [q.questionId]: opt.optionId,
+                                          }))
+                                        }
+                                        className={`rounded-lg border px-3 py-2 text-xs font-bold transition-all cursor-pointer ${
+                                          active
+                                            ? opt.optionId === 'yes'
+                                              ? 'border-emerald-400 bg-emerald-950/70 text-emerald-200'
+                                              : opt.optionId === 'no'
+                                              ? 'border-amber-400 bg-amber-950/70 text-amber-200'
+                                              : 'border-cyan-400 bg-cyan-950/70 text-cyan-200'
+                                            : 'border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-600'
+                                        }`}
+                                      >
+                                        {opt.labelZh}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          <div className="flex justify-end pt-1">
+                            <button
+                              type="button"
+                              disabled={ruleOutRecalculating}
+                              onClick={handleSubmitTargetedRuleOut}
+                              className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-4 py-2.5 text-xs font-black shadow-lg transition-colors cursor-pointer disabled:opacity-60"
+                            >
+                              {ruleOutRecalculating && (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              )}
+                              <span>
+                                {ruleOutRecalculating
+                                  ? '正在重新計算鑑別與信心度...'
+                                  : '重新計算鑑別與信心度'}
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

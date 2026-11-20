@@ -172,6 +172,27 @@ export function ReportExportModal({
             .join('；')}`
         );
       });
+
+      if (
+        primaryResult.targetedRuleOutHistory &&
+        primaryResult.targetedRuleOutHistory.length > 0
+      ) {
+        lines.push('');
+        lines.push('【三之二、AI 針對性排除與信心度強化紀錄】');
+        primaryResult.targetedRuleOutHistory.forEach((round) => {
+          lines.push(
+            `• 第 ${round.roundNumber} 輪（${
+              round.targetDiseaseNameZh || 'Top 3 綜合區分'
+            }）：綜合信心度 ${round.confidenceBeforePct}% → ${
+              round.confidenceAfterPct
+            }% (+${round.confidenceDeltaPct}%)`
+          );
+          lines.push(`  結論：${round.reasoningSummaryZh}`);
+          round.answeredItems.forEach((a) => {
+            lines.push(`  - ${a.questionTextZh} => ${a.selectedLabelZh}`);
+          });
+        });
+      }
     }
 
     if (differentialResult) {

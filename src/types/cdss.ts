@@ -80,7 +80,8 @@ export interface PatientContextProfile {
 export type GeminiModelOption =
   | 'gemini-2.5-flash'
   | 'gemini-2.5-pro'
-  | 'gemini-2.0-flash';
+  | 'gemini-2.0-flash'
+  | (string & {});
 
 export interface ApiConnectionSettings {
   enabled: boolean;
@@ -388,6 +389,22 @@ export interface SuspectedDiseaseDiagnosis {
     testNameZh: string;
     expectedFindingOrPurposeZh: string;
   }>;
+  ruleOutTrend?: 'reinforced' | 'ruled_down' | 'unchanged';
+}
+
+export interface TargetedRuleOutRoundSummary {
+  roundNumber: number;
+  targetMode: 'top3_overall' | 'single_disease';
+  targetDiseaseNameZh?: string;
+  confidenceBeforePct: number;
+  confidenceAfterPct: number;
+  confidenceDeltaPct: number;
+  reasoningSummaryZh: string;
+  answeredItems: Array<{
+    questionTextZh: string;
+    selectedLabelZh: string;
+  }>;
+  engineSource: 'gemini_ai' | 'rule_engine';
 }
 
 export type GlossaryTermCategory =
@@ -410,6 +427,15 @@ export interface PrimaryDiagnosisResult {
   iatrogenicAlerts: IatrogenicDrugAlertItem[];
   multimodalFindingsZh?: string;
   glossary_terms?: GlossaryTermItem[];
+  targetedRuleOutHistory?: TargetedRuleOutRoundSummary[];
+  engineMeta?: {
+    source: 'gemini_ai' | 'rule_engine';
+    modelId?: string;
+    totalTokens?: number;
+    promptTokens?: number;
+    candidatesTokens?: number;
+    latencyMs?: number;
+  };
 }
 
 export interface SecondaryDifferentialItem {

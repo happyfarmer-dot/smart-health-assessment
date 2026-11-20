@@ -464,52 +464,148 @@ const CLINICAL_DISEASE_KNOWLEDGE_BASE: DiseaseKnowledgeTemplate[] = [
       '眼球與眼眶受第五對腦神經「三叉神經第一支（眼支 V1）」支配，該神經同時分布於同側前額與頭頂，因此急性眼壓升高常被誤以為是偏頭痛或急性腸胃炎（因合併嘔吐）。',
   },
 
-  // 10. 耳鼻喉與前庭（耳鼻喉科、過敏免疫科）：耳石症 / 梅尼爾氏症 / 突發性耳聾 / 急性鼻竇炎
+  // 10a. 耳部與前庭（耳鼻喉科、神經內科）：耳石脫落症 / 梅尼爾氏症 / 突發性耳聾 / 中外耳炎
   {
-    diseaseId: 'dx_ent_vestibular_sinusitis_pharyngitis',
-    diseaseNameZh: '前庭內耳眩暈症（耳石脫落症／梅尼爾氏症）、突發性耳聾或急性副鼻竇／咽喉炎',
-    diseaseNameEn: 'BPPV / Meniere Disease / Sudden Sensorineural Hearing Loss / Acute Rhinosinusitis',
-    targetRegions: ['ear_auditory', 'nose_sinus', 'neck_throat'],
+    diseaseId: 'dx_ear_vestibular_otitis',
+    diseaseNameZh: '前庭內耳眩暈症（耳石脫落症／梅尼爾氏症）、突發性耳聾或急性中／外耳炎',
+    diseaseNameEn: 'BPPV / Meniere Disease / Sudden Sensorineural Hearing Loss / Otitis Media',
+    targetRegions: ['ear_auditory'],
     preferredDepths: ['deep_visceral', 'superficial'],
     keyQualities: ['q_throbbing_pulsating', 'q_dull_ache', 's_foreign_body_globus', 'f_swelling_bloating', 'f_abnormal_discharge_bleeding'],
     keySpecifics: [
       'sp_ear_tinnitus_sudden_hearing_loss',
       'sp_ear_vertigo_meniere_bppv',
       'sp_ear_otalgia_otorrhea_otitis',
-      'sp_nose_purulent_sinusitis_facial_pressure',
-      'sp_nose_epistaxis_anosmia_allergy',
-      'sp_neck_dysphagia_odynophagia',
-      'sp_throat_hoarseness_globus_lpr',
+      'sp_ear_fullness_eustachian_barotrauma',
+      'sp_ear_pulsatile_tinnitus_vascular',
+      'sp_ear_auricle_perichondritis_herpes_zoster',
+      'sp_ear_conductive_cerumen_impaction',
     ],
     keySystemics: ['sys_dizziness_vertigo', 'sys_nausea', 'sys_low_grade_fever', 'sys_high_fever'],
-    involvedSpecialtiesTw: ['耳鼻喉科', '神經內科', '過敏免疫風濕科'],
+    involvedSpecialtiesTw: ['耳鼻喉科', '神經內科'],
     typicalSupportZh: [
-      '耳部出現耳鳴、耳悶、聽力下降或姿勢性天旋地轉眩暈；或鼻竇咽喉區出現濃涕、眉心臉頰壓痛、吞嚥痛與聲音沙啞',
+      '耳部出現耳鳴、耳悶塞感、聽力突然下降、耳流膿痛或姿勢變換誘發之天旋地轉眩暈',
       '內耳前庭半規管受刺激時常伴隨眼震與自律神經反射性噁心想吐',
     ],
     typicalLackingCheckZh: [
       '若無合併複視、講話大舌頭、吞嚥嗆咳或單側手腳無力，則眩暈較偏向「周邊內耳前庭問題」而非中樞小腦／腦幹中風',
     ],
     pathophysiologyPlainZh:
-      '內耳半規管內的耳石（碳酸鈣結晶）若脫落滑入半規管，會在轉頭或躺下時帶動內淋巴液產生錯誤旋轉訊號（耳石症 BPPV）；若內淋巴水腫壓迫耳蝸與前庭則會同時引發眩暈、低頻耳鳴與聽力波動（梅尼爾氏症）。而在鼻腔與咽喉，當副鼻竇開口因發炎水腫阻塞時，分泌物滯留細菌滋生便會造成黃綠膿涕與眉心臉頰深層脹痛。',
+      '內耳半規管內的耳石（碳酸鈣結晶）若脫落滑入半規管，會在轉頭或躺下時帶動內淋巴液產生錯誤旋轉訊號（耳石症 BPPV）；若內淋巴水腫壓迫耳蝸與前庭則會同時引發眩暈、低頻耳鳴與聽力波動（梅尼爾氏症）。',
     confirmatoryTests: [
       {
         testNameZh: '純音聽力檢查（Pure-Tone Audiometry）＋ 眼振電圖／頭位變換前庭測試（Dix-Hallpike Test）',
         expectedFindingOrPurposeZh: '精確量化各頻率聽力閾值（確診突發性耳聾或梅尼爾氏低頻聽損），並透過誘發特徵性眼震定位耳石脫落之半規管',
       },
       {
-        testNameZh: '耳鼻喉光纖內視鏡檢查（Fiberoptic Nasopharyngolaryngoscopy）或鼻竇 X 光／電腦斷層（Sinus CT）',
-        expectedFindingOrPurposeZh: '直接檢視鼓膜、中鼻道蓄膿、鼻咽部、聲帶水腫息肉或會厭軟骨紅腫',
+        testNameZh: '耳鏡顯微檢查（Otoscopy）＋ 中耳鼓室圖檢查（Tympanometry）',
+        expectedFindingOrPurposeZh: '直接檢視鼓膜是否充血穿孔、中耳積液或外耳道皮膚腫脹發炎',
       },
     ],
     secondaryPair: {
       diseaseNameZh: '後循環小腦／腦幹缺血性中風（Posterior Circulation Stroke）或聽神經瘤',
       diseaseNameEn: 'Vertebrobasilar Insufficiency / Cerebellar Stroke / Vestibular Schwannoma',
-      whyConsiderToRuleOutZh: '若眩暈持續不停且與轉頭姿勢無關，或單側高頻耳鳴伴隨漸進性聽力喪失，需排除小腦腦幹血管病變或第八對腦神經聽神經瘤。',
+      whyConsiderToRuleOutZh: '若眩暈持續不停且與轉頭姿勢無關，或單側高頻耳鳴／搏動性耳鳴伴隨漸進性聽力喪失，需排除小腦腦幹血管病變或聽神經瘤。',
       keyRuleOutTestZh: '中樞眼震檢查（HINTS Exam）與腦部後顱窩磁振造影（Brain MRI with DWI）。',
     },
     referredPainInsightZh:
-      '中耳、扁桃腺與舌根同受第九對腦神經（舌咽神經）與第十對腦神經（迷走神經）耳支支配，因此嚴重的咽喉扁桃腺發炎或下咽病灶常產生「耳朵深處牽涉痛（Referred Otalgia）」。',
+      '耳道與中耳受第五、七、九、十對腦神經分支交錯支配，若出現耳廓周圍水泡伴同側臉歪嘴斜，須警覺帶狀皰疹病毒侵犯膝狀神經節（Ramsay Hunt 症候群）。',
+  },
+
+  // 10b. 鼻與鼻竇（耳鼻喉科、過敏免疫科）：急性／慢性鼻竇炎、過敏性鼻炎或鼻出血／鼻咽病變
+  {
+    diseaseId: 'dx_nose_sinusitis_rhinitis',
+    diseaseNameZh: '急性／慢性副鼻竇炎、過敏性鼻炎或鼻黏膜出血／鼻中膈病變',
+    diseaseNameEn: 'Acute or Chronic Rhinosinusitis / Allergic Rhinitis / Epistaxis',
+    targetRegions: ['nose_sinus'],
+    preferredDepths: ['deep_visceral', 'superficial'],
+    keyQualities: ['q_dull_ache', 'q_throbbing_pulsating', 'f_swelling_bloating', 'f_abnormal_discharge_bleeding'],
+    keySpecifics: [
+      'sp_nose_purulent_sinusitis_facial_pressure',
+      'sp_nose_epistaxis_anosmia_allergy',
+      'sp_nose_unilateral_obstruction_blood_discharge',
+      'sp_nose_postnasal_drip_night_cough',
+      'sp_nose_epistaxis_recurrent_heavy',
+      'sp_nose_anosmia_hyposmia',
+      'sp_nose_trauma_septal_hematoma',
+    ],
+    keySystemics: ['sys_low_grade_fever', 'sys_high_fever', 'sys_fatigue_malaise'],
+    involvedSpecialtiesTw: ['耳鼻喉科', '過敏免疫風濕科'],
+    typicalSupportZh: [
+      '鼻與鼻竇區出現黃綠濃涕、低頭前傾時眉心／雙頰壓痛加重、清水鼻涕打噴嚏、鼻涕倒流或流鼻血／嗅覺異常',
+      '若單側鼻塞持續惡化或鼻涕反覆帶血絲，臨床上須積極安排鼻咽鏡排除鼻息肉或鼻咽腫瘤',
+    ],
+    typicalLackingCheckZh: [
+      '若無高燒、劇烈臉頰膿腫壓痛或單側血絲鼻涕，多屬於病毒性上呼吸道鼻炎或過敏性鼻炎控制不良',
+    ],
+    pathophysiologyPlainZh:
+      '鼻腔與周圍四對副鼻竇相通，當感冒病毒、細菌或過敏原引起鼻甲黏膜充血水腫時，鼻竇開口會被阻塞，導致分泌物滯留發炎並產生眉心與臉頰深層脹痛（副鼻竇炎）；而鼻中膈前端的 Kiesselbach 血管叢極為表淺，乾燥或高血壓時容易破裂流鼻血。',
+    confirmatoryTests: [
+      {
+        testNameZh: '軟式纖維鼻咽內視鏡檢查（Fiberoptic Nasopharyngoscopy）',
+        expectedFindingOrPurposeZh: '直接檢視中鼻道是否有膿性分泌物流出、鼻息肉、鼻中膈彎曲以及鼻咽部黏膜是否異常',
+      },
+      {
+        testNameZh: '鼻竇電腦斷層掃描（Sinus CT）與過敏原特異性 IgE 檢測',
+        expectedFindingOrPurposeZh: '針對慢性或反覆發作之鼻竇炎評估各鼻竇腔蓄膿與骨壁狀況，並區分過敏性鼻炎誘因',
+      },
+    ],
+    secondaryPair: {
+      diseaseNameZh: '鼻咽部病變（Nasopharyngeal Lesion）或侵襲性黴菌性鼻竇炎',
+      diseaseNameEn: 'Nasopharyngeal Neoplasm / Invasive Fungal Sinusitis',
+      whyConsiderToRuleOutZh: '單側持續鼻塞、鼻涕帶血絲、單側耳悶或頸部腫塊須優先排除鼻咽病變；免疫低下或糖尿病患合併嚴重鼻竇痛需排除黴菌侵襲。',
+      keyRuleOutTestZh: '鼻咽鏡組織切片檢查與鼻竇／顱底顯影劑電腦斷層或 MRI。',
+    },
+    referredPainInsightZh:
+      '上頷竇底部與上排臼齒牙根僅隔一層薄骨板，因此急性上頷竇炎常引發整排上排牙齒悶痛，低頭時特別明顯。',
+  },
+
+  // 10c. 喉嚨與咽喉（耳鼻喉科、肝膽腸胃內科）：急性咽喉扁桃腺炎、咽喉逆流 (LPR) 或會厭／聲帶病變
+  {
+    diseaseId: 'dx_throat_pharyngitis_lpr',
+    diseaseNameZh: '急性咽喉扁桃腺炎、咽喉胃酸逆流 (LPR) 或聲帶／深頸部感染病變',
+    diseaseNameEn: 'Acute Pharyngotonsillitis / Laryngopharyngeal Reflux (LPR) / Peritonsillar Abscess',
+    targetRegions: ['neck_throat'],
+    preferredDepths: ['superficial', 'deep_visceral'],
+    keyQualities: ['q_sharp_stabbing', 'q_burning_searing', 's_foreign_body_globus', 'f_swelling_bloating'],
+    keySpecifics: [
+      'sp_neck_dysphagia_odynophagia',
+      'sp_throat_hoarseness_globus_lpr',
+      'sp_throat_exudative_tonsillitis_fever',
+      'sp_throat_peritonsillar_trismus_hot_potato',
+      'sp_throat_stridor_airway_obstruction',
+      'sp_throat_lpr_acid_reflux_cough',
+      'sp_throat_chronic_dysphagia_solid_liquid',
+    ],
+    keySystemics: ['sys_high_fever', 'sys_low_grade_fever', 'sys_lymphadenopathy'],
+    involvedSpecialtiesTw: ['耳鼻喉科', '肝膽腸胃內科'],
+    typicalSupportZh: [
+      '咽喉部出現吞嚥疼痛、扁桃腺紅腫化膿、聲音沙啞、喉嚨異物卡卡感（臆球症／咽喉逆流）或吸氣喘鳴',
+      '若合併張口困難、流口水、講話含糊或吸氣喘鳴，屬潛在上呼吸道阻塞急症，須立即就醫',
+    ],
+    typicalLackingCheckZh: [
+      '若無高燒、扁桃腺化膿、張口困難或進行性固體食物吞嚥困難，則較偏向胃酸咽喉逆流 (LPR) 或過度發聲導致之聲帶水腫',
+    ],
+    pathophysiologyPlainZh:
+      '咽喉黏膜受病毒或 A 型鏈球菌感染時會快速充血水腫與化膿，刺激舌咽神經引起吞嚥劇痛；若發炎擴散至扁桃腺周圍間隙形成膿瘍或波及會厭軟骨，便可能壓迫氣道引發喘鳴；慢性無痛的喉嚨卡卡感與晨起清喉嚨則多與胃酸氣體上衝刺激聲帶（咽喉逆流）有關。',
+    confirmatoryTests: [
+      {
+        testNameZh: '經鼻咽喉光纖內視鏡檢查（Fiberoptic Laryngoscopy）',
+        expectedFindingOrPurposeZh: '直接檢視咽喉、扁桃腺、會厭軟骨是否紅腫阻塞，並觀察雙側聲帶運動與是否有結節、息肉或胃酸灼傷',
+      },
+      {
+        testNameZh: 'A 型鏈球菌快篩／喉頭細菌培養 ＋ 必要時上消化道胃鏡檢查',
+        expectedFindingOrPurposeZh: '確認是否需使用抗生素治療化膿性扁桃腺炎；若伴隨進行性吞嚥困難或頑固逆流則以胃鏡排除食道病變',
+      },
+    ],
+    secondaryPair: {
+      diseaseNameZh: '急性會厭炎／深頸部感染膿瘍（Deep Neck Infection）或食道／下咽病變',
+      diseaseNameEn: 'Acute Epiglottitis / Deep Neck Space Infection / Hypopharyngeal-Esophageal Lesion',
+      whyConsiderToRuleOutZh: '聲音改變合併吸氣喘鳴、流口水須立刻排除急性會厭炎；長期抽菸喝酒吃檳榔者若聲音沙啞或單側喉痛逾 2 週須排除咽喉腫瘤。',
+      keyRuleOutTestZh: '緊急頸部軟組織側面 X 光／增強頸部電腦斷層（Contrast Neck CT）及咽喉內視鏡切片。',
+    },
+    referredPainInsightZh:
+      '扁桃腺窩與下咽同受第九、十對腦神經支配，因此嚴重扁桃腺炎或下咽發炎常伴隨同側「耳朵深處牽涉痛」。',
   },
 
   // 11. 口腔、牙齒與下顎（牙科／口腔顎面外科）：急性牙髓炎／牙周根尖膿瘍 / 顳顎關節障礙症

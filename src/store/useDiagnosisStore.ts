@@ -100,7 +100,7 @@ const DEFAULT_API_SETTINGS: ApiConnectionSettings = {
   enabled: false,
   apiKey: '',
   modelId: 'gemini-2.5-flash',
-  rememberInLocalStorage: false,
+  rememberInLocalStorage: true,
 };
 
 const DEFAULT_CONTEXT_PROFILE: PatientContextProfile = {
@@ -202,10 +202,16 @@ export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
               // ignore storage quota errors
             }
           }
+          const keyChanged =
+            partial.apiKey !== undefined &&
+            partial.apiKey.trim() !== state.apiSettings.apiKey.trim();
+          const modelChanged =
+            partial.modelId !== undefined &&
+            partial.modelId !== state.apiSettings.modelId;
           return {
             apiSettings: next,
             apiTestState:
-              partial.apiKey !== undefined || partial.enabled !== undefined
+              keyChanged || modelChanged
                 ? { status: 'idle' }
                 : state.apiTestState,
           };
@@ -483,6 +489,16 @@ export const useDiagnosisStore = create<DiagnosisWorkbenchState>()(
       name: 'cdss-clinical-diagnosis-store-v4',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
+        apiSettings: state.apiSettings.rememberInLocalStorage
+          ? state.apiSettings
+          : {
+              ...state.apiSettings,
+              apiKey: '',
+              enabled: false,
+            },
+        apiTestState: state.apiSettings.rememberInLocalStorage
+          ? state.apiTestState
+          : { status: 'idle' as const },
         contextProfile: state.contextProfile,
         selectedRegions: state.selectedRegions,
         systemicSymptomIds: state.systemicSymptomIds,

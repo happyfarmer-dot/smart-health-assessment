@@ -247,9 +247,9 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
     e.target.value = '';
     if (files.length === 0) return;
 
-    const remainingSlots = Math.max(0, 3 - attachments.length);
+    const remainingSlots = Math.max(0, 5 - attachments.length);
     if (remainingSlots === 0) {
-      setImageErrorMsg('最多僅可附加 3 張圖片，請先移除不需要的圖片。');
+      setImageErrorMsg('最多僅可附加 5 張圖片，請先移除不需要的圖片。');
       return;
     }
 
@@ -263,7 +263,7 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
         processed.push(compressed);
       }
       if (processed.length > 0) {
-        setAttachments((prev) => [...prev, ...processed].slice(0, 3));
+        setAttachments((prev) => [...prev, ...processed].slice(0, 5));
       }
     } catch (err) {
       setImageErrorMsg(
@@ -886,13 +886,13 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
                 </div>
               </div>
 
-              {/* 8. Gemini 多模態能力：補充照片或檢驗報告（選填，最多 3 張） */}
+              {/* 8. Gemini 多模態能力：補充照片或檢驗報告（選填，最多 5 張） */}
               <div className="rounded-xl border border-slate-800 bg-slate-950/75 p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Camera className="w-4 h-4 text-cyan-400 shrink-0" />
                     <label className="text-xs font-bold uppercase tracking-wider text-cyan-400">
-                      {orderedRegionIds.length > 1 ? '8.' : '7.'} 補充患部外觀照片或檢驗報告（選填，最多 3 張）
+                      {orderedRegionIds.length > 1 ? '8.' : '7.'} 補充患部外觀照片或檢驗報告（選填，最多 5 張）
                     </label>
                   </div>
                   <span className="text-[11px] text-slate-400">
@@ -926,7 +926,7 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
                 <div className="flex flex-wrap items-center gap-3">
                   <label
                     className={`inline-flex items-center gap-2 rounded-xl border border-dashed px-4 py-2.5 text-xs font-bold transition-colors ${
-                      attachments.length >= 3 || isCompressingImages
+                      attachments.length >= 5 || isCompressingImages
                         ? 'border-slate-700 bg-slate-900 text-slate-500 cursor-not-allowed'
                         : 'border-cyan-500/50 bg-cyan-950/30 hover:bg-cyan-950/60 text-cyan-200 cursor-pointer'
                     }`}
@@ -939,17 +939,24 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
                     <span>
                       {isCompressingImages
                         ? '正在壓縮與清除 EXIF...'
-                        : `選擇照片／檢驗單 (${attachments.length}/3)`}
+                        : `選擇照片／檢驗單 (${attachments.length}/5)`}
                     </span>
                     <input
                       type="file"
                       accept="image/*"
                       multiple
-                      disabled={attachments.length >= 3 || isCompressingImages}
+                      disabled={attachments.length >= 5 || isCompressingImages}
                       onChange={handleImageFilesChange}
                       className="hidden"
                     />
                   </label>
+
+                  {attachments.length > 0 && (
+                    <span className="text-[11px] font-semibold text-cyan-300">
+                      目前總容量：
+                      {attachments.reduce((sum, a) => sum + a.sizeKb, 0)} KB
+                    </span>
+                  )}
 
                   {imageErrorMsg && (
                     <span className="text-xs text-rose-400 font-semibold">
@@ -959,7 +966,7 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
                 </div>
 
                 {attachments.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
                     {attachments.map((att) => (
                       <div
                         key={att.id}

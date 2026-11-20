@@ -83,50 +83,67 @@ function CameraController({
     goalTarget: new THREE.Vector3(0, 0.03, 0),
   });
 
-  // 1. 一鍵區域聚焦 (全身 / 頭頸五官 / 胸腹軀幹 / 骨盆下肢)：強制切回正面最佳視角，且不受手動旋轉狀態影響
+  // 1. 一鍵區域聚焦 (全身 / 頭頸五官 / 胸腹軀幹 / 骨盆下肢)：依實際 Box3 邊界動態計算焦點與距離，強制切回正面最佳視角
   useEffect(() => {
+    const minY = bounds.minY;
+    const maxY = bounds.maxY;
+    const H = Math.max(0.5, maxY - minY);
+    const vFov = THREE.MathUtils.degToRad(40);
+    const aspect = Math.max(size.width / Math.max(size.height, 1), 0.45);
+    const tanHalfFov = Math.tan(vFov / 2);
+
     if (cameraFocusPreset === 'head_neck') {
+      const targetY = minY + H * 0.89;
+      const fitH = H * 0.27;
+      const dist = Math.max(1.35, fitH / 2 / tanHalfFov);
       animRef.current = {
         active: true,
-        goalTarget: new THREE.Vector3(0, 1.85, 0.02),
-        goalPos: new THREE.Vector3(0, 1.88, 1.32),
+        goalTarget: new THREE.Vector3(0, targetY, 0.02),
+        goalPos: new THREE.Vector3(0, targetY + 0.02, dist),
       };
       return;
     }
     if (cameraFocusPreset === 'chest_abdomen') {
+      const targetY = minY + H * 0.62;
+      const fitH = H * 0.44;
+      const dist = Math.max(2.0, fitH / 2 / tanHalfFov);
       animRef.current = {
         active: true,
-        goalTarget: new THREE.Vector3(0, 0.78, 0.02),
-        goalPos: new THREE.Vector3(0, 0.85, 2.25),
+        goalTarget: new THREE.Vector3(0, targetY, 0.02),
+        goalPos: new THREE.Vector3(0, targetY + 0.03, dist),
       };
       return;
     }
     if (cameraFocusPreset === 'pelvis_legs') {
+      const targetY = minY + H * 0.28;
+      const fitH = H * 0.64;
+      const dist = Math.max(3.2, fitH / 2 / tanHalfFov);
       animRef.current = {
         active: true,
-        goalTarget: new THREE.Vector3(0, -0.82, 0.0),
-        goalPos: new THREE.Vector3(0, -0.74, 3.1),
+        goalTarget: new THREE.Vector3(0, targetY, 0.0),
+        goalPos: new THREE.Vector3(0, targetY + 0.04, dist),
       };
       return;
     }
 
-    const vFov = THREE.MathUtils.degToRad(40);
-    const aspect = Math.max(size.width / Math.max(size.height, 1), 0.45);
-    const fitHeight = bounds.height * 1.25;
+    const fitHeight = H * 1.24; // 頭頂與腳底各留白約 10%
     const fitWidth = bounds.width * 1.15;
-    const distV = fitHeight / 2 / Math.tan(vFov / 2);
-    const distH = fitWidth / 2 / (Math.tan(vFov / 2) * aspect);
+    const distV = fitHeight / 2 / tanHalfFov;
+    const distH = fitWidth / 2 / (tanHalfFov * aspect);
     const dist = Math.max(distV, distH);
+    const fullTargetY = minY + H * 0.5;
 
     animRef.current = {
       active: true,
-      goalTarget: new THREE.Vector3(0, bounds.centerY, 0),
-      goalPos: new THREE.Vector3(0, bounds.centerY + 0.06, dist),
+      goalTarget: new THREE.Vector3(0, fullTargetY, 0),
+      goalPos: new THREE.Vector3(0, fullTargetY + 0.04, dist),
     };
   }, [
     cameraFocusPreset,
     presetCommandSeq,
     cameraResetCount,
+    bounds.minY,
+    bounds.maxY,
     bounds.centerY,
     bounds.height,
     bounds.width,
@@ -323,6 +340,8 @@ export function BodyCanvas3D({
   const [calibYOffset, setCalibYOffset] = useState(0);
   const [calibScale, setCalibScale] = useState(1.0);
   const [modelBounds, setModelBounds] = useState<ModelBoundsInfo>({
+    minY: -2.23,
+    maxY: 2.29,
     centerY: 0.03,
     height: 4.52,
     width: 2.7,

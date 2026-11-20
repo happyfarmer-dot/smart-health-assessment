@@ -83,6 +83,12 @@ export default function ClinicalDiagnosisWorkbenchPage() {
   const [differentialResult, setDifferentialResult] =
     useState<DifferentialAndAnalysisResult | null>(null);
   const [pubmedResult, setPubmedResult] = useState<PubMedResearchResult | null>(null);
+  const [apiExecutionError, setApiExecutionError] = useState<{
+    httpStatus?: number;
+    message: string;
+    modelId: string;
+  } | null>(null);
+  const lastDiagnosisPayloadRef = useRef<DiagnosisRequestPayload | null>(null);
 
   const desktopPanelRef = useRef<HTMLDivElement | null>(null);
 
@@ -130,6 +136,43 @@ export default function ClinicalDiagnosisWorkbenchPage() {
     totalFeatureCount,
   ]);
 
+  const executeDiagnosisStream = async (
+    payload: DiagnosisRequestPayload,
+    forceOfflineRuleMode: boolean = false
+  ) => {
+    setIsStreaming(true);
+    setApiExecutionError(null);
+    setSafetyResult(null);
+    setPrimaryResult(null);
+    setDifferentialResult(null);
+    setPubmedResult(null);
+
+    const activeCustomKey =
+      !forceOfflineRuleMode &&
+      apiSettings.enabled &&
+      apiSettings.apiKey.trim()
+        ? apiSettings.apiKey.trim()
+        : '';
+
+    await runIsomorphicDiagnosisStream(
+      payload,
+      {
+        onSafetyCheck: (data) => setSafetyResult(data),
+        onPrimaryDiagnosis: (data) => setPrimaryResult(data),
+        onDifferentialAndAnalysis: (data) => setDifferentialResult(data),
+        onPubMedResearch: (data) => setPubmedResult(data),
+        onApiError: (err) => {
+          setApiExecutionError(err);
+          setIsStreaming(false);
+        },
+        onComplete: () => setIsStreaming(false),
+        onError: () => setIsStreaming(false),
+      },
+      activeCustomKey,
+      apiSettings.modelId
+    );
+  };
+
   const handleConfirmAndStartDiagnosis = async (params: {
     wasSkipped: boolean;
     answers: DynamicFollowUpAnswerItem[];
@@ -147,11 +190,6 @@ export default function ClinicalDiagnosisWorkbenchPage() {
     setActiveRegion(null);
     setIsSummaryDrawerOpen(false);
     setActiveView('report');
-    setIsStreaming(true);
-    setSafetyResult(null);
-    setPrimaryResult(null);
-    setDifferentialResult(null);
-    setPubmedResult(null);
 
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -169,25 +207,8 @@ export default function ClinicalDiagnosisWorkbenchPage() {
       attachments: params.attachments,
       clientTimestamp: new Date().toISOString(),
     };
-
-    const activeCustomKey =
-      apiSettings.enabled && apiSettings.apiKey.trim()
-        ? apiSettings.apiKey.trim()
-        : '';
-
-    await runIsomorphicDiagnosisStream(
-      payload,
-      {
-        onSafetyCheck: (data) => setSafetyResult(data),
-        onPrimaryDiagnosis: (data) => setPrimaryResult(data),
-        onDifferentialAndAnalysis: (data) => setDifferentialResult(data),
-        onPubMedResearch: (data) => setPubmedResult(data),
-        onComplete: () => setIsStreaming(false),
-        onError: () => setIsStreaming(false),
-      },
-      activeCustomKey,
-      apiSettings.modelId
-    );
+    lastDiagnosisPayloadRef.current = payload;
+    await executeDiagnosisStream(payload, false);
   };
 
   // ==================== 獨立專屬臨床評估報告頁 (Dedicated Report View) ====================
@@ -222,7 +243,61 @@ export default function ClinicalDiagnosisWorkbenchPage() {
           </div>
         </nav>
 
-        <main className="max-w-5xl mx-auto px-3.5 sm:px-6 py-5 sm:py-7 space-y-5">
+        <main className="max-w-5xl mx-auto px-3.5 sm:px-6 py-5 sm:py-7 space-y-5 pb-16">
+          {apiExecutionError && (
+            <div className="rounded-2xl border border-rose-500/60 bg-rose-950/50 p-4 sm:p-5 text-rose-100 shadow-xl space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="text-sm font-black text-rose-300">
+                    Gemini AI 推理呼叫失敗（已停止並保留診斷細節，未靜默降級）
+                  </div>
+                  <div className="text-xs text-rose-200/90 font-mono">
+                    模型：{apiExecutionError.modelId}
+                    {apiExecutionError.httpStatus
+                      ? ` ・ HTTP ${apiExecutionError.httpStatus}`
+                      : ''}
+                  </div>
+                  <p className="text-xs text-rose-100 leading-relaxed">
+                    錯誤原因：{apiExecutionError.message}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={isStreaming}
+                    onClick={() => {
+                      if (lastDiagnosisPayloadRef.current) {
+                        executeDiagnosisStream(
+                          lastDiagnosisPayloadRef.current,
+                          false
+                        );
+                      }
+                    }}
+                    className="rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-3.5 py-2 text-xs font-black transition-colors cursor-pointer"
+                  >
+                    重試 Gemini API
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isStreaming}
+                    onClick={() => {
+                      if (lastDiagnosisPayloadRef.current) {
+                        executeDiagnosisStream(
+                          lastDiagnosisPayloadRef.current,
+                          true
+                        );
+                      }
+                    }}
+                    className="rounded-xl border border-slate-600 bg-slate-900 hover:bg-slate-800 text-slate-200 px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    暫時改用基礎規則模式
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <DiagnosisStreamReport
             isStreaming={isStreaming}
             safetyResult={safetyResult}
@@ -230,9 +305,12 @@ export default function ClinicalDiagnosisWorkbenchPage() {
             differentialResult={differentialResult}
             pubmedResult={pubmedResult}
             optionalGeminiKey={apiSettings.enabled ? apiSettings.apiKey : ''}
+            optionalGeminiModelId={apiSettings.modelId}
             onChangeGeminiKey={(key) =>
               updateApiSettings({ enabled: true, apiKey: key })
             }
+            diagnosisPayload={lastDiagnosisPayloadRef.current}
+            onUpdatePrimaryResult={(next) => setPrimaryResult(next)}
             assessedAt={assessedAt}
             contextSummaryZh={contextSummaryZh}
           />
@@ -258,7 +336,7 @@ export default function ClinicalDiagnosisWorkbenchPage() {
   // ==================== 主臨床輸入工作台 (Input Workbench View) ====================
   return (
     <>
-      <main className="max-w-7xl mx-auto px-3.5 sm:px-4 pt-3 pb-28 space-y-3.5">
+      <main className="max-w-7xl mx-auto px-3.5 sm:px-4 pt-3 pb-32 space-y-3.5">
         {/* 單行精簡 API 連線狀態列（點擊右側按鈕以 Modal 展開設定） */}
         <TopApiControlBar />
 

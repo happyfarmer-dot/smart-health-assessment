@@ -20,6 +20,8 @@ import { useDiagnosisStore } from '@/store/useDiagnosisStore';
 export type ModelGenderVariant = 'male' | 'female';
 
 export interface ModelBoundsInfo {
+  minY: number;
+  maxY: number;
   centerY: number;
   height: number;
   width: number;
@@ -205,11 +207,11 @@ function createSurfaceRegionOverlayMaterial(): THREE.ShaderMaterial {
       ${GLSL_REGION_CLASSIFIER_CHUNK}
 
       vec3 getThemeColor(int themeId) {
-        if (themeId == 0) return vec3(0.024, 0.714, 0.831); // Cyan (#06b6d4) 頭頸五官
-        if (themeId == 1) return vec3(0.231, 0.510, 0.965); // Blue (#3b82f6) 胸部上背
-        if (themeId == 2) return vec3(0.961, 0.620, 0.043); // Amber (#f59e0b) 腹部五區
-        if (themeId == 3) return vec3(0.957, 0.247, 0.369); // Rose (#f43f5e) 下背骨盆臀會陰
-        return vec3(0.063, 0.725, 0.506);                   // Emerald (#10b981) 四肢關節
+        if (themeId == 0) return vec3(0.024, 0.76, 0.88); // Cyan (#06b6d4) 頭頸五官
+        if (themeId == 1) return vec3(0.25, 0.55, 0.98);  // Blue (#3b82f6) 胸部上背
+        if (themeId == 2) return vec3(1.0, 0.72, 0.14);   // Bright Amber 腹部五區
+        if (themeId == 3) return vec3(0.96, 0.28, 0.42);  // Rose (#f43f5e) 下背骨盆臀會陰
+        return vec3(0.08, 0.76, 0.54);                    // Emerald (#10b981) 四肢關節
       }
 
       void main() {
@@ -241,13 +243,14 @@ function createSurfaceRegionOverlayMaterial(): THREE.ShaderMaterial {
         );
 
         // 邊界細線厚度（頭頸五官更精細，軀幹四肢保持清晰分界）
-        float borderWidth = (vNormCoord.y > 0.825) ? 0.0023 : 0.0038;
+        float borderWidth = (vNormCoord.y > 0.825) ? 0.0021 : 0.0036;
         float borderMask = 1.0 - smoothstep(borderWidth * 0.4, borderWidth, borderDist);
 
         vec3 baseFill = themeCol;
-        vec3 borderCol = mix(themeCol, vec3(0.95, 0.98, 1.0), 0.58);
+        vec3 borderCol = mix(themeCol, vec3(0.96, 0.99, 1.0), 0.62);
+        float baseThemeAlpha = (themeId == 2) ? 0.30 : 0.23;
         float fillAlpha = (uShowRegions > 0.5)
-          ? ((uShowXray > 0.5) ? 0.14 : 0.24)
+          ? ((uShowXray > 0.5) ? 0.14 : baseThemeAlpha)
           : 0.0;
         float borderAlpha = (uShowRegions > 0.5)
           ? ((uShowXray > 0.5) ? 0.45 : 0.78)
@@ -383,198 +386,444 @@ function applyXrayToGroup(group: THREE.Object3D, showOrganXray: boolean) {
   });
 }
 
+function createOrganXrayMaterial(
+  colorHex: string,
+  emissiveHex: string,
+  opacity: number = 0.65
+): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uBaseColor: { value: new THREE.Color(colorHex) },
+      uRimColor: { value: new THREE.Color(emissiveHex) },
+      uOpacity: { value: opacity },
+    },
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      void main() {
+        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+        vNormal = normalize(mat3(modelMatrix) * normal);
+        vViewDir = normalize(cameraPosition - worldPos.xyz);
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uBaseColor;
+      uniform vec3 uRimColor;
+      uniform float uOpacity;
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      void main() {
+        float ndv = abs(dot(normalize(vNormal), normalize(vViewDir)));
+        float fresnel = pow(1.0 - ndv, 1.65);
+        vec3 col = mix(uBaseColor * 0.72, uRimColor, 0.35 + 0.65 * fresnel);
+        float alpha = clamp(uOpacity * (0.45 + 0.75 * fresnel), 0.18, 0.92);
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+}
+
+let cachedOrgansGlb: THREE.Group | null | undefined = undefined;
+
 /**
  * 內臟與器官半透明 X 光參考層 (Organ & Viscera Translucent Reference Layer)
+ * - 優先嘗試載入 `/models/human_organs.glb`
+ * - 預設以 LatheGeometry、TubeGeometry 與 ExtrudeGeometry (bevelEnabled) 組裝具備真實解剖辨識度的立體多葉器官
  */
 function TranslucentOrgansReferenceLayer({ visible }: { visible: boolean }) {
   const pulseRef = useRef<THREE.Group>(null);
+  const [organsGlb, setOrgansGlb] = useState<THREE.Group | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (cachedOrgansGlb !== undefined) {
+      setOrgansGlb(cachedOrgansGlb);
+      return;
+    }
+
+    let mounted = true;
+    const url = getModelFullUrl('/models/human_organs.glb');
+    fetch(url, { method: 'HEAD' })
+      .then((res) => {
+        if (!res.ok) {
+          cachedOrgansGlb = null;
+          return;
+        }
+        const draco = new DRACOLoader();
+        draco.setDecoderPath(getDracoDecoderBasePath());
+        const loader = new GLTFLoader();
+        loader.setDRACOLoader(draco);
+        loader.load(
+          url,
+          (gltf) => {
+            const g = gltf.scene.clone(true);
+            const mat = createOrganXrayMaterial('#38bdf8', '#bae6fd', 0.68);
+            g.traverse((c) => {
+              if ((c as THREE.Mesh).isMesh) {
+                (c as THREE.Mesh).material = mat;
+                (c as THREE.Mesh).raycast = () => {};
+              }
+            });
+            cachedOrgansGlb = g;
+            if (mounted) setOrgansGlb(g);
+            draco.dispose();
+          },
+          undefined,
+          () => {
+            cachedOrgansGlb = null;
+            draco.dispose();
+          }
+        );
+      })
+      .catch(() => {
+        cachedOrgansGlb = null;
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [visible]);
+
+  const organGeos = useMemo(() => {
+    // 1. 心臟錐形心室 (LatheGeometry) + 主動脈弓 (TubeGeometry)
+    const heartProfile = [
+      new THREE.Vector2(0.005, -0.11),
+      new THREE.Vector2(0.055, -0.07),
+      new THREE.Vector2(0.095, -0.01),
+      new THREE.Vector2(0.098, 0.055),
+      new THREE.Vector2(0.065, 0.1),
+      new THREE.Vector2(0.01, 0.11),
+    ];
+    const heartVentricularGeo = new THREE.LatheGeometry(heartProfile, 24);
+    heartVentricularGeo.scale(0.95, 1.0, 0.82);
+
+    const aortaCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0.0, 0.07, 0.01),
+      new THREE.Vector3(-0.02, 0.14, 0.01),
+      new THREE.Vector3(0.03, 0.18, -0.02),
+      new THREE.Vector3(0.05, 0.12, -0.06),
+      new THREE.Vector3(0.04, -0.05, -0.07),
+    ]);
+    const aortaGeo = new THREE.TubeGeometry(aortaCurve, 24, 0.022, 12, false);
+
+    // 2. 氣管與左右支氣管 (TubeGeometry)
+    const tracheaGeo = new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 2.22, 0.05),
+        new THREE.Vector3(0, 1.96, 0.045),
+        new THREE.Vector3(0, 1.72, 0.02),
+      ]),
+      14,
+      0.026,
+      12,
+      false
+    );
+    const rightBronchusGeo = new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 1.72, 0.02),
+        new THREE.Vector3(-0.08, 1.66, 0.015),
+        new THREE.Vector3(-0.15, 1.6, 0.01),
+      ]),
+      10,
+      0.018,
+      10,
+      false
+    );
+    const leftBronchusGeo = new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 1.72, 0.02),
+        new THREE.Vector3(0.08, 1.66, 0.015),
+        new THREE.Vector3(0.15, 1.6, 0.01),
+      ]),
+      10,
+      0.017,
+      10,
+      false
+    );
+
+    // 3. 左右肺葉 (飽滿立體斜角 ExtrudeGeometry)
+    const rightLungShape = new THREE.Shape();
+    rightLungShape.moveTo(0.02, -0.22);
+    rightLungShape.bezierCurveTo(0.14, -0.22, 0.18, -0.1, 0.16, 0.08);
+    rightLungShape.bezierCurveTo(0.14, 0.24, 0.05, 0.3, -0.02, 0.26);
+    rightLungShape.bezierCurveTo(-0.07, 0.22, -0.08, 0.04, -0.06, -0.14);
+    rightLungShape.bezierCurveTo(-0.04, -0.2, -0.01, -0.22, 0.02, -0.22);
+    const rightLungGeo = new THREE.ExtrudeGeometry(rightLungShape, {
+      depth: 0.12,
+      bevelEnabled: true,
+      bevelThickness: 0.06,
+      bevelSize: 0.045,
+      bevelSegments: 5,
+    });
+    rightLungGeo.center();
+
+    const leftLungShape = new THREE.Shape();
+    leftLungShape.moveTo(-0.02, -0.21);
+    leftLungShape.bezierCurveTo(-0.14, -0.21, -0.17, -0.08, -0.15, 0.08);
+    leftLungShape.bezierCurveTo(-0.13, 0.24, -0.04, 0.29, 0.02, 0.25);
+    leftLungShape.bezierCurveTo(0.06, 0.21, 0.07, 0.08, 0.04, 0.0);
+    // 心切跡 (Cardiac notch)
+    leftLungShape.bezierCurveTo(0.01, -0.05, 0.0, -0.12, 0.04, -0.17);
+    leftLungShape.bezierCurveTo(0.02, -0.2, 0.0, -0.21, -0.02, -0.21);
+    const leftLungGeo = new THREE.ExtrudeGeometry(leftLungShape, {
+      depth: 0.11,
+      bevelEnabled: true,
+      bevelThickness: 0.055,
+      bevelSize: 0.04,
+      bevelSegments: 5,
+    });
+    leftLungGeo.center();
+
+    // 4. 肝臟楔形雙葉 (ExtrudeGeometry) + 水滴狀膽囊 (LatheGeometry)
+    const liverShape = new THREE.Shape();
+    liverShape.moveTo(-0.2, -0.08);
+    liverShape.bezierCurveTo(-0.22, 0.05, -0.14, 0.12, 0.02, 0.11);
+    liverShape.bezierCurveTo(0.16, 0.1, 0.23, 0.04, 0.22, 0.01);
+    liverShape.bezierCurveTo(0.16, -0.02, 0.04, -0.04, -0.06, -0.09);
+    liverShape.bezierCurveTo(-0.14, -0.12, -0.19, -0.11, -0.2, -0.08);
+    const liverGeo = new THREE.ExtrudeGeometry(liverShape, {
+      depth: 0.12,
+      bevelEnabled: true,
+      bevelThickness: 0.045,
+      bevelSize: 0.035,
+      bevelSegments: 4,
+    });
+    liverGeo.center();
+
+    const gbGeo = new THREE.LatheGeometry(
+      [
+        new THREE.Vector2(0.002, -0.04),
+        new THREE.Vector2(0.024, -0.02),
+        new THREE.Vector2(0.022, 0.01),
+        new THREE.Vector2(0.008, 0.045),
+      ],
+      14
+    );
+
+    // 5. 胃部 J 字型彎曲囊袋 (TubeGeometry)
+    const stomachGeo = new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0.03, 1.32, 0.04),
+        new THREE.Vector3(0.14, 1.26, 0.06),
+        new THREE.Vector3(0.18, 1.15, 0.07),
+        new THREE.Vector3(0.11, 1.07, 0.08),
+        new THREE.Vector3(0.02, 1.09, 0.07),
+      ]),
+      24,
+      0.052,
+      14,
+      false
+    );
+
+    // 6. 大腸倒 U 字型框架 + 盤繞小腸 + 闌尾
+    const colonGeo = new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.2, 0.72, 0.08),
+        new THREE.Vector3(-0.21, 0.96, 0.07),
+        new THREE.Vector3(-0.08, 1.02, 0.09),
+        new THREE.Vector3(0.12, 1.02, 0.08),
+        new THREE.Vector3(0.21, 0.95, 0.06),
+        new THREE.Vector3(0.2, 0.72, 0.07),
+        new THREE.Vector3(0.12, 0.62, 0.06),
+        new THREE.Vector3(0.0, 0.56, 0.01),
+      ]),
+      40,
+      0.038,
+      12,
+      false
+    );
+
+    const smallIntestineGeo = new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.08, 0.94, 0.09),
+        new THREE.Vector3(0.1, 0.91, 0.1),
+        new THREE.Vector3(-0.11, 0.86, 0.1),
+        new THREE.Vector3(0.11, 0.81, 0.1),
+        new THREE.Vector3(-0.1, 0.76, 0.09),
+        new THREE.Vector3(0.08, 0.72, 0.09),
+        new THREE.Vector3(-0.14, 0.7, 0.08),
+      ]),
+      48,
+      0.026,
+      10,
+      false
+    );
+
+    const appendixGeo = new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.2, 0.7, 0.08),
+        new THREE.Vector3(-0.22, 0.63, 0.09),
+        new THREE.Vector3(-0.18, 0.59, 0.1),
+      ]),
+      10,
+      0.011,
+      8,
+      false
+    );
+
+    // 7. 蠶豆形腎臟 (ExtrudeGeometry) + 圓錐囊狀膀胱 (LatheGeometry)
+    const kidneyShape = new THREE.Shape();
+    kidneyShape.moveTo(0.0, -0.07);
+    kidneyShape.bezierCurveTo(0.06, -0.07, 0.075, -0.02, 0.065, 0.03);
+    kidneyShape.bezierCurveTo(0.055, 0.07, 0.01, 0.08, -0.015, 0.05);
+    kidneyShape.bezierCurveTo(-0.03, 0.02, -0.01, 0.01, -0.01, 0.0);
+    kidneyShape.bezierCurveTo(-0.01, -0.01, -0.03, -0.02, -0.015, -0.05);
+    kidneyShape.bezierCurveTo(-0.005, -0.065, 0.0, -0.07, 0.0, -0.07);
+    const kidneyGeo = new THREE.ExtrudeGeometry(kidneyShape, {
+      depth: 0.035,
+      bevelEnabled: true,
+      bevelThickness: 0.018,
+      bevelSize: 0.014,
+      bevelSegments: 3,
+    });
+    kidneyGeo.center();
+
+    const bladderGeo = new THREE.LatheGeometry(
+      [
+        new THREE.Vector2(0.004, -0.05),
+        new THREE.Vector2(0.042, -0.035),
+        new THREE.Vector2(0.068, 0.0),
+        new THREE.Vector2(0.055, 0.04),
+        new THREE.Vector2(0.01, 0.055),
+      ],
+      18
+    );
+
+    return {
+      heartVentricularGeo,
+      aortaGeo,
+      tracheaGeo,
+      rightBronchusGeo,
+      leftBronchusGeo,
+      rightLungGeo,
+      leftLungGeo,
+      liverGeo,
+      gbGeo,
+      stomachGeo,
+      colonGeo,
+      smallIntestineGeo,
+      appendixGeo,
+      kidneyGeo,
+      bladderGeo,
+    };
+  }, []);
+
+  const organMats = useMemo(
+    () => ({
+      brain: createOrganXrayMaterial('#38bdf8', '#bae6fd', 0.55),
+      trachea: createOrganXrayMaterial('#22d3ee', '#a5f3fc', 0.62),
+      lung: createOrganXrayMaterial('#60a5fa', '#bfdbfe', 0.48),
+      heart: createOrganXrayMaterial('#f43f5e', '#fda4af', 0.82),
+      liver: createOrganXrayMaterial('#d97706', '#fcd34d', 0.68),
+      gallbladder: createOrganXrayMaterial('#10b981', '#6ee7b7', 0.8),
+      stomach: createOrganXrayMaterial('#f59e0b', '#fde68a', 0.62),
+      colon: createOrganXrayMaterial('#fb923c', '#fed7aa', 0.52),
+      smallIntestine: createOrganXrayMaterial('#eab308', '#fef08a', 0.5),
+      appendix: createOrganXrayMaterial('#fb7185', '#fecdd3', 0.84),
+      kidney: createOrganXrayMaterial('#ec4899', '#f9a8d4', 0.68),
+      bladder: createOrganXrayMaterial('#f97316', '#fdba74', 0.62),
+    }),
+    []
+  );
 
   useFrame(({ clock }) => {
     if (!visible || !pulseRef.current) return;
     const t = clock.getElapsedTime();
-    const s = 1 + Math.sin(t * 4.2) * 0.045;
+    const s = 1 + Math.sin(t * 4.5) * 0.045;
     pulseRef.current.scale.set(s, s, s);
   });
 
   if (!visible) return null;
 
+  if (organsGlb) {
+    return <primitive object={organsGlb} />;
+  }
+
   return (
     <group>
-      {/* 腦部與視神經參考 */}
-      <mesh position={[0, 2.52, -0.02]} raycast={() => {}}>
-        <sphereGeometry args={[0.17, 16, 16]} />
-        <meshStandardMaterial
-          color="#38bdf8"
-          emissive="#0284c7"
-          emissiveIntensity={0.4}
-          transparent
-          opacity={0.45}
-          depthWrite={false}
-        />
+      {/* 腦部雙半球參考 */}
+      <mesh position={[-0.06, 2.53, -0.02]} material={organMats.brain} raycast={() => {}}>
+        <sphereGeometry args={[0.115, 16, 16]} />
+      </mesh>
+      <mesh position={[0.06, 2.53, -0.02]} material={organMats.brain} raycast={() => {}}>
+        <sphereGeometry args={[0.115, 16, 16]} />
       </mesh>
 
-      {/* 氣管與甲狀腺 */}
-      <mesh position={[0, 2.02, 0.06]} raycast={() => {}}>
-        <cylinderGeometry args={[0.04, 0.045, 0.26, 12]} />
-        <meshStandardMaterial
-          color="#22d3ee"
-          transparent
-          opacity={0.5}
-          depthWrite={false}
-        />
-      </mesh>
+      {/* 氣管與左右支氣管分叉 */}
+      <mesh geometry={organGeos.tracheaGeo} material={organMats.trachea} raycast={() => {}} />
+      <mesh geometry={organGeos.rightBronchusGeo} material={organMats.trachea} raycast={() => {}} />
+      <mesh geometry={organGeos.leftBronchusGeo} material={organMats.trachea} raycast={() => {}} />
 
-      {/* 肺葉 (右肺 / 左肺) */}
+      {/* 左右肺葉（右肺三葉飽滿、左肺含心切跡） */}
       <mesh
-        position={[-0.17, 1.46, 0.02]}
-        scale={[0.85, 1.45, 0.75]}
+        geometry={organGeos.rightLungGeo}
+        material={organMats.lung}
+        position={[-0.18, 1.54, 0.02]}
         raycast={() => {}}
-      >
-        <sphereGeometry args={[0.16, 16, 16]} />
-        <meshStandardMaterial
-          color="#60a5fa"
-          emissive="#1d4ed8"
-          emissiveIntensity={0.35}
-          transparent
-          opacity={0.45}
-          depthWrite={false}
-        />
-      </mesh>
+      />
       <mesh
-        position={[0.17, 1.46, 0.02]}
-        scale={[0.8, 1.42, 0.75]}
+        geometry={organGeos.leftLungGeo}
+        material={organMats.lung}
+        position={[0.18, 1.54, 0.02]}
         raycast={() => {}}
-      >
-        <sphereGeometry args={[0.155, 16, 16]} />
-        <meshStandardMaterial
-          color="#60a5fa"
-          emissive="#1d4ed8"
-          emissiveIntensity={0.35}
-          transparent
-          opacity={0.45}
-          depthWrite={false}
-        />
-      </mesh>
+      />
 
-      {/* 心臟 (脈動亮點) */}
-      <group ref={pulseRef} position={[0.07, 1.42, 0.1]}>
-        <mesh scale={[0.9, 1.15, 0.85]} raycast={() => {}}>
-          <sphereGeometry args={[0.11, 16, 16]} />
-          <meshStandardMaterial
-            color="#f43f5e"
-            emissive="#e11d48"
-            emissiveIntensity={0.85}
-            transparent
-            opacity={0.78}
-            depthWrite={false}
-          />
-        </mesh>
+      {/* 心臟錐形心室 + 主動脈弓（微偏左脈動） */}
+      <group ref={pulseRef} position={[0.06, 1.44, 0.09]} rotation={[0.08, 0, -0.32]}>
+        <mesh geometry={organGeos.heartVentricularGeo} material={organMats.heart} raycast={() => {}} />
+        <mesh geometry={organGeos.aortaGeo} material={organMats.heart} raycast={() => {}} />
       </group>
 
-      {/* 肝臟與膽囊 (右側 -X) */}
+      {/* 楔形雙葉肝臟 + 下方水滴狀綠色膽囊 */}
       <mesh
-        position={[-0.16, 1.07, 0.08]}
-        scale={[1.4, 0.75, 0.85]}
+        geometry={organGeos.liverGeo}
+        material={organMats.liver}
+        position={[-0.1, 1.15, 0.07]}
         raycast={() => {}}
-      >
-        <sphereGeometry args={[0.14, 16, 16]} />
-        <meshStandardMaterial
-          color="#d97706"
-          emissive="#b45309"
-          emissiveIntensity={0.45}
-          transparent
-          opacity={0.62}
-          depthWrite={false}
-        />
-      </mesh>
+      />
+      <mesh
+        geometry={organGeos.gbGeo}
+        material={organMats.gallbladder}
+        position={[-0.14, 1.03, 0.11]}
+        rotation={[0.25, 0, -0.35]}
+        raycast={() => {}}
+      />
 
-      {/* 胃部與胰臟 (中上與左上 +X) */}
-      <mesh
-        position={[0.12, 1.05, 0.08]}
-        scale={[1.1, 0.85, 0.8]}
-        raycast={() => {}}
-      >
-        <sphereGeometry args={[0.11, 16, 16]} />
-        <meshStandardMaterial
-          color="#fbbf24"
-          emissive="#d97706"
-          emissiveIntensity={0.35}
-          transparent
-          opacity={0.55}
-          depthWrite={false}
-        />
-      </mesh>
+      {/* J 字型胃部囊袋 */}
+      <mesh geometry={organGeos.stomachGeo} material={organMats.stomach} raycast={() => {}} />
 
-      {/* 脾臟 (左側遠端 +X) */}
-      <mesh
-        position={[0.25, 1.12, -0.02]}
-        scale={[0.6, 0.9, 0.7]}
-        raycast={() => {}}
-      >
-        <sphereGeometry args={[0.075, 12, 12]} />
-        <meshStandardMaterial
-          color="#a855f7"
-          transparent
-          opacity={0.55}
-          depthWrite={false}
-        />
-      </mesh>
+      {/* 倒 U 字型大腸 + 盤繞小腸 + 右下腹闌尾 */}
+      <mesh geometry={organGeos.colonGeo} material={organMats.colon} raycast={() => {}} />
+      <mesh geometry={organGeos.smallIntestineGeo} material={organMats.smallIntestine} raycast={() => {}} />
+      <mesh geometry={organGeos.appendixGeo} material={organMats.appendix} raycast={() => {}} />
 
-      {/* 左右腎臟 (偏後腹腔 -Z) */}
+      {/* 後腰雙側蠶豆形腎臟 */}
       <mesh
-        position={[-0.14, 0.96, -0.08]}
-        scale={[0.65, 1.15, 0.55]}
+        geometry={organGeos.kidneyGeo}
+        material={organMats.kidney}
+        position={[-0.14, 1.02, -0.08]}
+        rotation={[0, 0.15, -0.15]}
         raycast={() => {}}
-      >
-        <sphereGeometry args={[0.075, 12, 12]} />
-        <meshStandardMaterial
-          color="#ec4899"
-          transparent
-          opacity={0.58}
-          depthWrite={false}
-        />
-      </mesh>
+      />
       <mesh
-        position={[0.14, 0.98, -0.08]}
-        scale={[0.65, 1.15, 0.55]}
+        geometry={organGeos.kidneyGeo}
+        material={organMats.kidney}
+        position={[0.14, 1.04, -0.08]}
+        rotation={[0, -0.15, Math.PI + 0.15]}
         raycast={() => {}}
-      >
-        <sphereGeometry args={[0.075, 12, 12]} />
-        <meshStandardMaterial
-          color="#ec4899"
-          transparent
-          opacity={0.58}
-          depthWrite={false}
-        />
-      </mesh>
+      />
 
-      {/* 闌尾參考 (右下腹 -X) */}
+      {/* 骨盆底圓錐囊狀膀胱 */}
       <mesh
-        position={[-0.19, 0.65, 0.1]}
-        rotation={[0.3, 0, -0.5]}
+        geometry={organGeos.bladderGeo}
+        material={organMats.bladder}
+        position={[0, 0.44, 0.09]}
         raycast={() => {}}
-      >
-        <capsuleGeometry args={[0.022, 0.09, 6, 8]} />
-        <meshStandardMaterial
-          color="#fb7185"
-          emissive="#e11d48"
-          emissiveIntensity={0.65}
-          transparent
-          opacity={0.78}
-          depthWrite={false}
-        />
-      </mesh>
-
-      {/* 膀胱 / 骨盆臟器 */}
-      <mesh position={[0, 0.44, 0.09]} raycast={() => {}}>
-        <sphereGeometry args={[0.1, 14, 14]} />
-        <meshStandardMaterial
-          color="#fb923c"
-          transparent
-          opacity={0.55}
-          depthWrite={false}
-        />
-      </mesh>
+      />
     </group>
   );
 }
@@ -631,7 +880,9 @@ function AnatomicalBodyVisualBase({
         const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
         onBoundsComputed({
-          centerY: center.y,
+          minY: box.min.y - 0.48,
+          maxY: box.max.y - 0.48,
+          centerY: center.y - 0.48,
           height: size.y,
           width: size.x,
         });
@@ -785,7 +1036,9 @@ function AnatomicalBodyVisualBase({
             const normSize = normBox.getSize(new THREE.Vector3());
             const normCenter = normBox.getCenter(new THREE.Vector3());
             onBoundsComputed?.({
-              centerY: normCenter.y,
+              minY: normBox.min.y - 0.48,
+              maxY: normBox.max.y - 0.48,
+              centerY: normCenter.y - 0.48,
               height: normSize.y,
               width: normSize.x,
             });

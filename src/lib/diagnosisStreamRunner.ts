@@ -11,6 +11,18 @@ import { evaluateSilentSafetyCheck } from './safetyAndIatrogenicEngine';
 import { runDifferentialDiagnosisEngine } from './differentialDiagnosisEngine';
 import { fetchVerifiedPubMedResearch } from './pubmedService';
 
+export class GeminiApiExecutionError extends Error {
+  httpStatus?: number;
+  modelId: string;
+
+  constructor(message: string, modelId: string, httpStatus?: number) {
+    super(message);
+    this.name = 'GeminiApiExecutionError';
+    this.httpStatus = httpStatus;
+    this.modelId = modelId;
+  }
+}
+
 export interface DiagnosisStreamCallbacks {
   onSafetyCheck: (data: SafetyCheckResult) => void;
   onPrimaryDiagnosis: (data: PrimaryDiagnosisResult) => void;
@@ -18,6 +30,11 @@ export interface DiagnosisStreamCallbacks {
   onPubMedResearch: (data: PubMedResearchResult) => void;
   onComplete: () => void;
   onError?: (errMessage: string) => void;
+  onApiError?: (err: {
+    httpStatus?: number;
+    message: string;
+    modelId: string;
+  }) => void;
 }
 
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
@@ -131,7 +148,7 @@ async function enhanceWithOptionalGeminiKey(
     > = [{ text: prompt }];
 
     if (hasAttachments && payload.attachments) {
-      for (const att of payload.attachments.slice(0, 3)) {
+      for (const att of payload.attachments.slice(0, 5)) {
         if (att.base64Data) {
           requestParts.push({
             inlineData: {
@@ -144,29 +161,71 @@ async function enhanceWithOptionalGeminiKey(
     }
 
     const targetModel = modelId || 'gemini-2.5-flash';
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+    const startMs = performance.now();
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          targetModel
+        )}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: requestParts }],
+            generationConfig: {
+              temperature: 0.2,
+              responseMimeType: 'application/json',
+            },
+          }),
+        }
+      );
+    } catch (netErr) {
+      throw new GeminiApiExecutionError(
+        netErr instanceof Error
+          ? `網路連線異常或 CORS 阻擋：${netErr.message}`
+          : '無法連線至 Google Gemini API 伺服器',
         targetModel
-      )}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: requestParts }],
-          generationConfig: {
-            temperature: 0.2,
-            responseMimeType: 'application/json',
-          },
-        }),
-      }
-    );
+      );
+    }
 
-    if (!response.ok) return { primary: basePrimary, diff: baseDiff };
+    const latencyMs = Math.round(performance.now() - startMs);
+
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`;
+      try {
+        const errJson = await response.json();
+        const apiMsg = errJson?.error?.message;
+        if (apiMsg) detail = `${detail}：${apiMsg}`;
+      } catch {
+        // keep status text
+      }
+      throw new GeminiApiExecutionError(detail, targetModel, response.status);
+    }
+
     const data = await response.json();
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawText) return { primary: basePrimary, diff: baseDiff };
+    if (!rawText) {
+      const finishReason = data?.candidates?.[0]?.finishReason || 'NO_CANDIDATE';
+      throw new GeminiApiExecutionError(
+        `Gemini API 未回傳有效內容（原因：${finishReason}）`,
+        targetModel,
+        response.status
+      );
+    }
 
-    const parsed = JSON.parse(rawText);
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      throw new GeminiApiExecutionError(
+        'Gemini API 回傳格式非合法 JSON（Schema 解析失敗）',
+        targetModel,
+        response.status
+      );
+    }
+
+    const usage = data?.usageMetadata;
     const parsedGlossary = Array.isArray(parsed.glossary_terms)
       ? parsed.glossary_terms
           .filter(
@@ -209,6 +268,17 @@ async function enhanceWithOptionalGeminiKey(
         ? String(parsed.multimodalFindingsZh)
         : basePrimary.multimodalFindingsZh,
       glossary_terms: parsedGlossary,
+      engineMeta: {
+        source: 'gemini_ai',
+        modelId: targetModel,
+        totalTokens: typeof usage?.totalTokenCount === 'number' ? usage.totalTokenCount : undefined,
+        promptTokens: typeof usage?.promptTokenCount === 'number' ? usage.promptTokenCount : undefined,
+        candidatesTokens:
+          typeof usage?.candidatesTokenCount === 'number'
+            ? usage.candidatesTokenCount
+            : undefined,
+        latencyMs,
+      },
       topSuspectedDiseases: basePrimary.topSuspectedDiseases.map((d, idx) =>
         idx === 0 && parsed.enhancedPathophysiologyZh
           ? {
@@ -228,8 +298,14 @@ async function enhanceWithOptionalGeminiKey(
       },
     };
     return { primary: nextPrimary, diff: nextDiff };
-  } catch {
-    return { primary: basePrimary, diff: baseDiff };
+  } catch (err) {
+    if (err instanceof GeminiApiExecutionError) {
+      throw err;
+    }
+    throw new GeminiApiExecutionError(
+      err instanceof Error ? err.message : '呼叫 Gemini API 發生未預期錯誤',
+      modelId || 'gemini-2.5-flash'
+    );
   }
 }
 
@@ -320,19 +396,39 @@ export async function runIsomorphicDiagnosisStream(
     const { primaryResult, differentialResult } =
       runDifferentialDiagnosisEngine(payload);
 
-    let finalPrimary = primaryResult;
+    let finalPrimary: PrimaryDiagnosisResult = {
+      ...primaryResult,
+      engineMeta: { source: 'rule_engine' },
+    };
     let finalDiff = differentialResult;
 
     if (optionalGeminiApiKey?.trim()) {
-      const enhanced = await enhanceWithOptionalGeminiKey(
-        optionalGeminiApiKey.trim(),
-        optionalGeminiModelId,
-        payload,
-        primaryResult,
-        differentialResult
-      );
-      finalPrimary = enhanced.primary;
-      finalDiff = enhanced.diff;
+      try {
+        const enhanced = await enhanceWithOptionalGeminiKey(
+          optionalGeminiApiKey.trim(),
+          optionalGeminiModelId,
+          payload,
+          primaryResult,
+          differentialResult
+        );
+        finalPrimary = enhanced.primary;
+        finalDiff = enhanced.diff;
+      } catch (apiErr) {
+        const gErr =
+          apiErr instanceof GeminiApiExecutionError
+            ? apiErr
+            : new GeminiApiExecutionError(
+                apiErr instanceof Error ? apiErr.message : 'Gemini API 呼叫失敗',
+                optionalGeminiModelId
+              );
+        callbacks.onApiError?.({
+          httpStatus: gErr.httpStatus,
+          message: gErr.message,
+          modelId: gErr.modelId,
+        });
+        callbacks.onComplete();
+        return;
+      }
     }
 
     // Event 2: primary_diagnosis
