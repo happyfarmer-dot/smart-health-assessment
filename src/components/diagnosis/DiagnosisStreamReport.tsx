@@ -32,6 +32,8 @@ import {
   PubMedResearchResult,
   SafetyCheckResult,
 } from '@/types/cdss';
+import { GlossaryLegendBadge, GlossaryText } from './GlossaryText';
+import { TopThreeComparisonMatrix } from './TopThreeComparisonMatrix';
 
 interface DiagnosisStreamReportProps {
   isStreaming: boolean;
@@ -390,16 +392,34 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
                 </div>
               )}
 
-              {/* 2-C. 最有可能之具體疾病鑑別清單 (Top 2-3 Suspected Diseases) */}
+              {/* 2-B-2. Gemini 多模態「影像／檢驗單判讀發現」獨立區塊 */}
+              {primaryResult.multimodalFindingsZh && (
+                <div className="rounded-2xl border border-cyan-500/45 bg-cyan-950/20 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-cyan-300">
+                    <Microscope className="h-4 w-4 text-cyan-400 shrink-0" />
+                    <h3 className="text-sm font-bold text-cyan-200">
+                      影像／檢驗單 AI 多模態判讀發現 (Multimodal Clinical Findings)
+                    </h3>
+                  </div>
+                  <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line">
+                    {primaryResult.multimodalFindingsZh}
+                  </p>
+                </div>
+              )}
+
+              {/* 2-C. Top 3 疾病橫向鑑別對照表 ＋ 漸進展開疾病卡片 */}
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <TopThreeComparisonMatrix
+                  diseases={primaryResult.topSuspectedDiseases}
+                  dynamicGlossary={primaryResult.glossary_terms}
+                />
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                   <h3 className="text-sm sm:text-base font-bold text-slate-100 flex items-center gap-2">
                     <Stethoscope className="h-4 w-4 text-cyan-400" />
                     最有可能之具體疾病鑑別清單 (Primary Differential Diagnoses)
                   </h3>
-                  <span className="text-xs text-slate-400">
-                    依臨床症狀吻合度與深度層級排序
-                  </span>
+                  <GlossaryLegendBadge />
                 </div>
 
                 <div className="space-y-4">
@@ -492,7 +512,12 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
                                     (ev, i) => (
                                       <li key={i} className="flex items-start gap-2">
                                         <span className="text-emerald-400 font-bold">•</span>
-                                        <span>{ev}</span>
+                                        <span>
+                                          <GlossaryText
+                                            text={ev}
+                                            dynamicGlossary={primaryResult.glossary_terms}
+                                          />
+                                        </span>
                                       </li>
                                     )
                                   )}
@@ -509,7 +534,12 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
                                     (ev, i) => (
                                       <li key={i} className="flex items-start gap-2">
                                         <span className="text-amber-400 font-bold">•</span>
-                                        <span>{ev}</span>
+                                        <span>
+                                          <GlossaryText
+                                            text={ev}
+                                            dynamicGlossary={primaryResult.glossary_terms}
+                                          />
+                                        </span>
                                       </li>
                                     )
                                   )}
@@ -524,7 +554,10 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
                                 白話西醫病理機轉 (Pathophysiology Explanation)
                               </div>
                               <p className="text-xs text-slate-200 leading-relaxed">
-                                {dx.pathophysiologyPlainZh}
+                                <GlossaryText
+                                  text={dx.pathophysiologyPlainZh}
+                                  dynamicGlossary={primaryResult.glossary_terms}
+                                />
                               </p>
                             </div>
 
@@ -542,13 +575,20 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
                                       className="rounded-lg border border-slate-800 bg-slate-950/80 p-2.5 text-xs"
                                     >
                                       <div className="font-bold text-slate-100">
-                                        {tIdx + 1}. {test.testNameZh}
+                                        {tIdx + 1}.{' '}
+                                        <GlossaryText
+                                          text={test.testNameZh}
+                                          dynamicGlossary={primaryResult.glossary_terms}
+                                        />
                                       </div>
                                       <div className="text-slate-300 mt-0.5">
                                         <span className="text-cyan-400 font-medium">
                                           檢查目的與預期發現：
                                         </span>
-                                        {test.expectedFindingOrPurposeZh}
+                                        <GlossaryText
+                                          text={test.expectedFindingOrPurposeZh}
+                                          dynamicGlossary={primaryResult.glossary_terms}
+                                        />
                                       </div>
                                     </div>
                                   )
@@ -596,13 +636,25 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
                     <span className="font-bold text-cyan-300">
                       跨解剖區牽涉痛與全身症狀關聯：
                     </span>
-                    {differentialResult.mdtCrossSpecialtyAnalysis.referredPainAndSystemicLinkZh}
+                    <GlossaryText
+                      text={
+                        differentialResult.mdtCrossSpecialtyAnalysis
+                          .referredPainAndSystemicLinkZh
+                      }
+                      dynamicGlossary={primaryResult?.glossary_terms}
+                    />
                   </p>
                   <p className="rounded-lg border border-slate-800 bg-slate-900/80 p-3">
                     <span className="font-bold text-emerald-300">
                       基礎生理背景與客觀生命徵象權重分析：
                     </span>
-                    {differentialResult.mdtCrossSpecialtyAnalysis.vitalsAndContextWeightAnalysisZh}
+                    <GlossaryText
+                      text={
+                        differentialResult.mdtCrossSpecialtyAnalysis
+                          .vitalsAndContextWeightAnalysisZh
+                      }
+                      dynamicGlossary={primaryResult?.glossary_terms}
+                    />
                   </p>
                 </div>
               </div>
@@ -650,11 +702,17 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
                         </div>
                         <p className="text-slate-300">
                           <span className="font-semibold text-slate-200">為何列入排查：</span>
-                          {sec.whyConsiderToRuleOutZh}
+                          <GlossaryText
+                            text={sec.whyConsiderToRuleOutZh}
+                            dynamicGlossary={primaryResult?.glossary_terms}
+                          />
                         </p>
                         <p className="text-cyan-300">
                           <span className="font-semibold">關鍵排除檢查：</span>
-                          {sec.keyRuleOutTestZh}
+                          <GlossaryText
+                            text={sec.keyRuleOutTestZh}
+                            dynamicGlossary={primaryResult?.glossary_terms}
+                          />
                         </p>
                       </div>
                     ))}
@@ -684,7 +742,13 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
                   <ul className="space-y-1 text-xs text-slate-300">
                     {differentialResult.supplementaryGuidance.nonPharmacologicalReliefZh.map(
                       (tip, i) => (
-                        <li key={i}>• {tip}</li>
+                        <li key={i}>
+                          •{' '}
+                          <GlossaryText
+                            text={tip}
+                            dynamicGlossary={primaryResult?.glossary_terms}
+                          />
+                        </li>
                       )
                     )}
                   </ul>
@@ -700,7 +764,12 @@ export const DiagnosisStreamReport: React.FC<DiagnosisStreamReportProps> = ({
                       (flag, i) => (
                         <li key={i} className="flex items-start gap-1.5">
                           <AlertTriangle className="h-3.5 w-3.5 text-rose-400 shrink-0 mt-0.5" />
-                          <span>{flag}</span>
+                          <span>
+                            <GlossaryText
+                              text={flag}
+                              dynamicGlossary={primaryResult?.glossary_terms}
+                            />
+                          </span>
                         </li>
                       )
                     )}

@@ -1,4 +1,5 @@
 import {
+  BiologicalSex,
   BodyRegionId,
   DiscomfortQualityCategory,
   DiscomfortQualityItem,
@@ -682,6 +683,7 @@ export const REGION_SPECIFIC_SYMPTOMS: RegionSpecificSymptomItem[] = [
     defaultDepth: 'deep_visceral',
     colloquialAliases: ['膀胱炎', '泌尿道感染', '尿道炎', '小腹痛頻尿'],
     meshTermsEn: ['Cystitis', 'Urinary Tract Infections'],
+    biologicalSexFilter: 'all',
   },
   {
     id: 'sp_pelvis_inguinal_hernia_bulge',
@@ -690,14 +692,26 @@ export const REGION_SPECIFIC_SYMPTOMS: RegionSpecificSymptomItem[] = [
     defaultDepth: 'musculoskeletal',
     colloquialAliases: ['腹股溝疝氣', '鼠蹊部腫塊', '墜腸'],
     meshTermsEn: ['Hernia, Inguinal'],
+    biologicalSexFilter: 'all',
   },
   {
     id: 'sp_pelvis_gyne_pid_adnexal',
     regionId: 'pelvis_groin',
-    labelZh: '骨盆下腹深層抽痛墜脹，伴隨異常陰道出血、分泌物異味或性交疼痛',
+    labelZh: '骨盆深層劇痛墜脹，伴隨經期異常、非經期陰道出血、分泌物異味或性交疼痛',
     defaultDepth: 'deep_visceral',
-    colloquialAliases: ['骨盆腔發炎', '卵巢囊腫痛', '子宮外孕痛', '非經期出血腹痛'],
+    colloquialAliases: ['骨盆腔發炎', '卵巢囊腫痛', '子宮外孕痛', '經期異常', '異常陰道出血'],
     meshTermsEn: ['Pelvic Inflammatory Disease', 'Ovarian Cysts', 'Pregnancy, Ectopic'],
+    biologicalSexFilter: 'female',
+    isRedFlagWeight: true,
+  },
+  {
+    id: 'sp_pelvis_male_prostate_retention',
+    regionId: 'pelvis_groin',
+    labelZh: '下腹膀胱脹滿卻排尿困難、尿流細弱中斷或急性尿滯留（攝護腺肥大／急性攝護腺炎）',
+    defaultDepth: 'deep_visceral',
+    colloquialAliases: ['尿不出來', '攝護腺肥大', '解尿困難', '膀胱漲尿'],
+    meshTermsEn: ['Prostatic Hyperplasia', 'Urinary Retention', 'Prostatitis'],
+    biologicalSexFilter: 'male',
   },
 
   // 14. 臀部與髖後側 buttocks_hip
@@ -714,10 +728,30 @@ export const REGION_SPECIFIC_SYMPTOMS: RegionSpecificSymptomItem[] = [
   {
     id: 'sp_uro_dysuria_discharge_urethritis',
     regionId: 'urogenital_perineal',
-    labelZh: '排尿時尿道口灼熱刺痛、尿道流出黃白或透明分泌物、頻尿夜尿或排尿困難（攝護腺／尿道炎）',
+    labelZh: '排尿時尿道口灼熱刺痛、尿道分泌物、頻尿夜尿或血尿（尿道炎／泌尿道感染）',
     defaultDepth: 'superficial',
-    colloquialAliases: ['尿道炎', '排尿刺痛', '尿道分泌物', '攝護腺肥大', '攝護腺炎'],
-    meshTermsEn: ['Urethritis', 'Urinary Tract Infections', 'Prostatitis'],
+    colloquialAliases: ['尿道炎', '排尿刺痛', '尿道分泌物', '血尿'],
+    meshTermsEn: ['Urethritis', 'Urinary Tract Infections'],
+    biologicalSexFilter: 'all',
+  },
+  {
+    id: 'sp_uro_male_prostate_difficulty',
+    regionId: 'urogenital_perineal',
+    labelZh: '攝護腺排尿困難（須用力解尿、餘尿感、夜尿頻繁）或會陰深處腫脹疼痛',
+    defaultDepth: 'deep_visceral',
+    colloquialAliases: ['攝護腺排尿困難', '攝護腺炎', '會陰脹痛', '夜尿'],
+    meshTermsEn: ['Prostatitis', 'Prostatic Hyperplasia', 'Lower Urinary Tract Symptoms'],
+    biologicalSexFilter: 'male',
+  },
+  {
+    id: 'sp_uro_scrotal_testicular_acute_pain',
+    regionId: 'urogenital_perineal',
+    labelZh: '單側陰囊或睪丸突發劇烈抽痛／腫脹（需緊急排除睪丸扭轉或急性副睪丸炎）',
+    defaultDepth: 'deep_visceral',
+    colloquialAliases: ['睪丸痛', '睪丸腫脹', '陰囊腫痛', '睪丸扭轉', '副睪丸炎'],
+    meshTermsEn: ['Spermatic Cord Torsion', 'Epididymitis', 'Orchitis'],
+    biologicalSexFilter: 'male',
+    isRedFlagWeight: true,
   },
   {
     id: 'sp_uro_vaginal_pruritus_discharge_vulvitis',
@@ -726,14 +760,16 @@ export const REGION_SPECIFIC_SYMPTOMS: RegionSpecificSymptomItem[] = [
     defaultDepth: 'superficial',
     colloquialAliases: ['念珠菌感染', '陰道炎', '私密處搔癢', '白帶異常', '巴氏腺囊腫'],
     meshTermsEn: ['Vaginitis', 'Candidiasis, Vulvovaginal', 'Vulvitis'],
+    biologicalSexFilter: 'female',
   },
   {
-    id: 'sp_uro_scrotal_testicular_acute_pain',
+    id: 'sp_uro_female_abnormal_bleeding',
     regionId: 'urogenital_perineal',
-    labelZh: '單側陰囊或睪丸突發劇烈抽痛腫大（需緊急排除睪丸扭轉或急性副睪丸炎），或會陰生殖器水泡潰瘍',
+    labelZh: '經期異常、非經期異常陰道出血（或停經後出血）合併下腹會陰墜痛',
     defaultDepth: 'deep_visceral',
-    colloquialAliases: ['睪丸痛', '陰囊腫痛', '睪丸扭轉', '副睪丸炎', '生殖器水泡潰瘍'],
-    meshTermsEn: ['Spermatic Cord Torsion', 'Epididymitis', 'Orchitis'],
+    colloquialAliases: ['經期異常', '異常陰道出血', '停經後出血', '骨盆痛'],
+    meshTermsEn: ['Menorrhagia', 'Metrorrhagia', 'Uterine Hemorrhage'],
+    biologicalSexFilter: 'female',
     isRedFlagWeight: true,
   },
 
@@ -958,7 +994,15 @@ export const REGION_SPECIFIC_SYMPTOMS: RegionSpecificSymptomItem[] = [
 ];
 
 export function getSpecificSymptomsByRegion(
-  regionId: BodyRegionId
+  regionId: BodyRegionId,
+  biologicalSex?: BiologicalSex
 ): RegionSpecificSymptomItem[] {
-  return REGION_SPECIFIC_SYMPTOMS.filter((s) => s.regionId === regionId);
+  return REGION_SPECIFIC_SYMPTOMS.filter((s) => {
+    if (s.regionId !== regionId) return false;
+    if (!biologicalSex || biologicalSex === 'intersex_or_other') return true;
+    if (s.biologicalSexFilter && s.biologicalSexFilter !== 'all') {
+      return s.biologicalSexFilter === biologicalSex;
+    }
+    return true;
+  });
 }

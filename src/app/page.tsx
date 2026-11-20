@@ -28,6 +28,7 @@ import { DEPTH_LAYER_CONFIG } from '@/data/discomfortQualities';
 import { SYSTEMIC_SYMPTOM_MAP } from '@/data/systemicSymptomsCatalog';
 import {
   BodyRegionId,
+  ClinicalAttachmentImage,
   DiagnosisRequestPayload,
   DifferentialAndAnalysisResult,
   DynamicFollowUpAnswerItem,
@@ -129,9 +130,10 @@ export default function ClinicalDiagnosisWorkbenchPage() {
     totalFeatureCount,
   ]);
 
-  const handleConfirmAndStartDiagnosis = async (dynamicAnswers: {
+  const handleConfirmAndStartDiagnosis = async (params: {
     wasSkipped: boolean;
     answers: DynamicFollowUpAnswerItem[];
+    attachments?: ClinicalAttachmentImage[];
   }) => {
     const nowLabel = new Date().toLocaleString('zh-TW', {
       hour12: false,
@@ -160,7 +162,11 @@ export default function ClinicalDiagnosisWorkbenchPage() {
       regionRecords: selectedRegionList,
       systemicSymptomIds,
       followUp,
-      dynamicAnswers,
+      dynamicAnswers: {
+        wasSkipped: params.wasSkipped,
+        answers: params.answers,
+      },
+      attachments: params.attachments,
       clientTimestamp: new Date().toISOString(),
     };
 

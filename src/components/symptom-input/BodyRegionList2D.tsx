@@ -12,7 +12,11 @@ import {
   Sparkles,
   AlertCircle,
 } from 'lucide-react';
-import { BODY_REGIONS, BODY_GROUP_LABELS } from '@/data/bodyRegions';
+import {
+  BODY_REGIONS,
+  BODY_GROUP_LABELS,
+  BODY_GROUP_THEME,
+} from '@/data/bodyRegions';
 import {
   DEPTH_LAYER_CONFIG,
   DISCOMFORT_CATEGORY_META,
@@ -51,6 +55,7 @@ const QUALITY_CATEGORIES: DiscomfortQualityCategory[] = [
 
 export function BodyRegionList2D() {
   const {
+    contextProfile,
     selectedRegions,
     activeRegionId,
     setActiveRegion,
@@ -120,6 +125,7 @@ export function BodyRegionList2D() {
 
       {GROUP_ORDER.map((groupKey) => {
         const groupInfo = BODY_GROUP_LABELS[groupKey];
+        const groupTheme = BODY_GROUP_THEME[groupKey];
         const regionsInGroup = BODY_REGIONS.filter((r) => r.group === groupKey);
         const selectedInGroupCount = regionsInGroup.filter((r) =>
           Boolean(selectedRegions[r.id])
@@ -129,7 +135,7 @@ export function BodyRegionList2D() {
         return (
           <div
             key={groupKey}
-            className="bg-slate-900/95 border border-slate-800 rounded-2xl overflow-hidden shadow-lg"
+            className={`bg-slate-900/95 border border-slate-800 ${groupTheme.barClass} rounded-2xl overflow-hidden shadow-lg`}
           >
             <button
               type="button"
@@ -138,8 +144,16 @@ export function BodyRegionList2D() {
             >
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full shrink-0 ${groupTheme.dotClass}`}
+                  />
                   <span className="text-sm font-extrabold text-slate-100">
                     {groupInfo.title}
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${groupTheme.badgeClass}`}
+                  >
+                    {groupTheme.labelZh}
                   </span>
                   {selectedInGroupCount > 0 && (
                     <span className="text-xs font-bold bg-rose-600 text-white px-2.5 py-0.5 rounded-full">
@@ -173,7 +187,10 @@ export function BodyRegionList2D() {
                   const currentDepth =
                     sel?.depthLayer ||
                     (region.defaultDepthLayer as SymptomDepthLayer);
-                  const specificSymptoms = getSpecificSymptomsByRegion(rId);
+                  const specificSymptoms = getSpecificSymptomsByRegion(
+                    rId,
+                    contextProfile.biologicalSex
+                  );
                   const isSensationsExpanded = Boolean(
                     expandedSensationsByRegion[rId]
                   );

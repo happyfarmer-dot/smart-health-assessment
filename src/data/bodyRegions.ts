@@ -31,6 +31,63 @@ export const BODY_GROUP_LABELS: Record<
 };
 
 /**
+ * 五大解剖主題專屬配色系統（3D 分區色塊／邊框與 2D 列表色條完全同步）
+ */
+export const BODY_GROUP_THEME: Record<
+  BodyGroupCategory,
+  {
+    hex: string;
+    labelZh: string;
+    barClass: string;
+    badgeClass: string;
+    dotClass: string;
+  }
+> = {
+  head_neck: {
+    hex: '#06b6d4',
+    labelZh: '頭頸五官',
+    barClass: 'border-l-4 border-l-cyan-500',
+    badgeClass: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40',
+    dotClass: 'bg-cyan-400',
+  },
+  chest_back: {
+    hex: '#3b82f6',
+    labelZh: '胸背乳房',
+    barClass: 'border-l-4 border-l-blue-500',
+    badgeClass: 'bg-blue-500/15 text-blue-300 border-blue-500/40',
+    dotClass: 'bg-blue-400',
+  },
+  abdomen_five: {
+    hex: '#f59e0b',
+    labelZh: '腹部五區',
+    barClass: 'border-l-4 border-l-amber-500',
+    badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
+    dotClass: 'bg-amber-400',
+  },
+  lower_back_pelvis: {
+    hex: '#f43f5e',
+    labelZh: '腰背骨盆私密',
+    barClass: 'border-l-4 border-l-rose-500',
+    badgeClass: 'bg-rose-500/15 text-rose-300 border-rose-500/40',
+    dotClass: 'bg-rose-400',
+  },
+  upper_limbs: {
+    hex: '#10b981',
+    labelZh: '上下肢體',
+    barClass: 'border-l-4 border-l-emerald-500',
+    badgeClass: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
+    dotClass: 'bg-emerald-400',
+  },
+  lower_limbs: {
+    hex: '#10b981',
+    labelZh: '上下肢體',
+    barClass: 'border-l-4 border-l-emerald-500',
+    badgeClass: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
+    dotClass: 'bg-emerald-400',
+  },
+};
+
+/**
  * 32 個全身無死角 3D/2D 解剖分區定義表
  * 座標系說明（病人自身視角 Laterality Safeguard）：
  * - 在 Three.js 正面視角 (camera at z > 0 looking at origin):

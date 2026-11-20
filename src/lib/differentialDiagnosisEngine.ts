@@ -803,6 +803,15 @@ export function runDifferentialDiagnosisEngine(
   const vitalEval = evaluateObjectiveVitalSigns(payload.followUp.vitals);
   const iatrogenicAlerts = evaluateIatrogenicDrugCauses(payload);
 
+  const isElderly65Plus =
+    payload.contextProfile.ageGroup === '65+' ||
+    (typeof payload.contextProfile.exactAge === 'number' &&
+      payload.contextProfile.exactAge >= 65);
+  const onsetOrder = payload.followUp.regionOnsetOrder || [];
+  const hasMigration = Boolean(payload.followUp.hasSymptomMigration);
+  const selfTreatments = payload.followUp.selfTreatments || [];
+  const treatmentResponse = payload.followUp.treatmentResponse;
+
   // 1. 對知識庫中所有疾病進行多維度臨床特徵計分
   const scoredDiseases = CLINICAL_DISEASE_KNOWLEDGE_BASE.map((tpl) => {
     let score = 20; // 基礎先驗分
@@ -863,6 +872,116 @@ export function runDifferentialDiagnosisEngine(
       tpl.diseaseId === 'dx_psychiatry_anxiety_panic_depression_insomnia'
     ) {
       score += 28;
+    }
+
+    // Batch B-4：65 歲以上高齡非典型表現強制加權
+    if (isElderly65Plus) {
+      const hasEpigastricOrChest = payload.regionRecords.some((r) =>
+        ['abd_epigastric', 'chest_left', 'shoulder_l', 'upper_back'].includes(
+          r.regionId
+        )
+      );
+      const hasAtypicalFatigueOrDyspnea = payload.systemicSymptomIds.some((s) =>
+        ['sys_fatigue', 'sys_dyspnea', 'sys_diaphoresis', 'sys_dizziness_syncope'].includes(
+          s
+        )
+      );
+      if (
+        tpl.diseaseId === 'dx_coronary_angina_ischemia' &&
+        (hasEpigastricOrChest || hasAtypicalFatigueOrDyspnea)
+      ) {
+        score += 14;
+        matchedSupport.push(
+          '65 歲以上高齡非典型表現警覺：長者心肌缺血可能僅以上腹悶痛、虛弱或微喘表現，提高心血管排除權重'
+        );
+      }
+
+      const hasElderlyInfectionSign = payload.systemicSymptomIds.some((s) =>
+        ['sys_confusion_lethargy', 'sys_fatigue', 'sys_fever', 'sys_chills'].includes(s)
+      );
+      if (
+        (tpl.diseaseId === 'dx_urolithiasis_uti_pyelonephritis' ||
+          tpl.diseaseId === 'dx_urogenital_uti_prostatitis_vaginitis_epididymitis') &&
+        hasElderlyInfectionSign
+      ) {
+        score += 10;
+        matchedSupport.push(
+          '65 歲以上高齡感染症非典型表現警覺：長者泌尿或全身感染常以嗜睡、精神混亂或全身倦怠呈現（未必高燒）'
+        );
+      }
+    }
+
+    // Batch B-5：發作先後順序與疼痛轉移路徑加權
+    const epiIdx = onsetOrder.indexOf('abd_epigastric');
+    const rlqIdx = onsetOrder.indexOf('abd_rlq');
+    const hasClassicAppendicitisMigration =
+      hasMigration &&
+      ((epiIdx !== -1 && rlqIdx !== -1 && epiIdx < rlqIdx) ||
+        payload.regionRecords.some((r) => r.regionId === 'abd_rlq'));
+    if (
+      tpl.diseaseId === 'dx_acute_appendicitis' &&
+      hasClassicAppendicitisMigration
+    ) {
+      score += 18;
+      matchedSupport.push(
+        '典型轉移痛順序支持：症狀由原發處（如中上腹／肚臍周圍）轉移並定焦於右下腹，符合急性闌尾炎演變'
+      );
+    }
+
+    // Batch B-6：已自行處置與用藥反應（Treatment Response）加權
+    if (selfTreatments.length > 0 && treatmentResponse) {
+      const relieved =
+        treatmentResponse === 'significant_relief' ||
+        treatmentResponse === 'mild_relief';
+      const failedOrWorse =
+        treatmentResponse === 'no_effect' || treatmentResponse === 'worsened';
+
+      if (selfTreatments.includes('antacid_ppi') && relieved) {
+        if (tpl.diseaseId === 'dx_gerd_peptic_ulcer') {
+          score += 14;
+          matchedSupport.push('用藥反應支持：服用胃藥／制酸劑後獲得緩解，支持胃酸相關黏膜病變');
+        }
+      }
+      if (selfTreatments.includes('analgesic_nsaids') && failedOrWorse) {
+        if (tpl.diseaseId === 'dx_gerd_peptic_ulcer') {
+          score += 12;
+          matchedSupport.push(
+            '用藥反應警訊：服用止痛消炎藥 (NSAIDs) 後無效或反而加重，高度警覺消化性潰瘍惡化風險'
+          );
+        }
+        if (
+          tpl.diseaseId === 'dx_coronary_angina_ischemia' ||
+          tpl.diseaseId === 'dx_acute_cholecystitis_biliary_colic'
+        ) {
+          score += 8;
+          matchedSupport.push(
+            '用藥反應線索：一般止痛消炎藥無法緩解，傾向內臟或血管性病因而非單純肌肉骨骼痛'
+          );
+        }
+        if (tpl.diseaseId === 'dx_costochondritis_thoracic_myofascial') {
+          score -= 6;
+        }
+      }
+      if (
+        (selfTreatments.includes('ice_pack') ||
+          selfTreatments.includes('heat_pack') ||
+          selfTreatments.includes('rest_lying')) &&
+        relieved
+      ) {
+        if (
+          tpl.diseaseId === 'dx_costochondritis_thoracic_myofascial' ||
+          tpl.diseaseId === 'dx_lumbar_radiculopathy_or_arthritis'
+        ) {
+          score += 10;
+          matchedSupport.push('物理處置反應：冰／熱敷或平躺休息後緩解，支持肌肉骨骼與筋膜病因');
+        }
+      }
+      if (selfTreatments.includes('antihistamine') && relieved) {
+        if (tpl.diseaseId === 'dx_ent_vestibular_sinusitis_pharyngitis') {
+          score += 10;
+          matchedSupport.push('用藥反應支持：抗組織胺有效緩解，支持過敏或上呼吸道發炎反應');
+        }
+      }
     }
 
     // D-2 動態追問命中加權與陰性排除證據
@@ -1085,6 +1204,32 @@ export function runDifferentialDiagnosisEngine(
     );
   }
 
+  if (isElderly65Plus) {
+    vitalsContextParts.push(
+      '高齡非典型表現加權（65 歲以上）：已主動提高長者「不典型心肌梗塞（僅上腹悶痛／虛弱）」與「不典型感染（嗜睡／意識改變但無高燒）」之鑑別警覺'
+    );
+  }
+
+  if (selfTreatments.length > 0 || treatmentResponse) {
+    vitalsContextParts.push(
+      `自行處置與反應：處置（${selfTreatments.join(', ') || '已註記'}），反應（${treatmentResponse || '未指定'}）已納入鑑別權重`
+    );
+  }
+
+  const sequenceText =
+    onsetOrder.length > 1
+      ? `（病程先後順序：${onsetOrder
+          .map(
+            (id, idx) =>
+              `${idx + 1}. ${
+                payload.regionRecords
+                  .find((r) => r.regionId === id)
+                  ?.regionNameZh.split('（')[0] || id
+              }`
+          )
+          .join(' → ')}${hasMigration ? '，且具明確疼痛轉移現象' : ''}）`
+      : '';
+
   return {
     primaryResult: {
       diagnosticConfidence,
@@ -1096,8 +1241,9 @@ export function runDifferentialDiagnosisEngine(
       mdtCrossSpecialtyAnalysis: {
         participatingSpecialtiesTw,
         referredPainAndSystemicLinkZh:
-          top3[0]?.tpl.referredPainInsightZh ||
-          '內臟器官感覺神經與體表皮節在脊髓背角常發生匯聚，因此深層病灶可能同時在鄰近或遠端皮節產生牽涉痛。',
+          (top3[0]?.tpl.referredPainInsightZh ||
+            '內臟器官感覺神經與體表皮節在脊髓背角常發生匯聚，因此深層病灶可能同時在鄰近或遠端皮節產生牽涉痛。') +
+          sequenceText,
         vitalsAndContextWeightAnalysisZh: vitalsContextParts.join('。') + '。',
       },
       supplementaryGuidance: {

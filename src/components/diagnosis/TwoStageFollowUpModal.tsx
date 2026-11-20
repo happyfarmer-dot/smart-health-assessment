@@ -4,8 +4,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
+  Camera,
   CheckCircle2,
   Clock,
   Droplets,
@@ -14,31 +17,110 @@ import {
   HeartPulse,
   HelpCircle,
   Loader2,
+  Pill,
+  ShieldAlert,
   SkipForward,
   Sparkles,
   Stethoscope,
   Thermometer,
+  Trash2,
+  Upload,
   Wind,
   X,
 } from 'lucide-react';
 import { useDiagnosisStore } from '@/store/useDiagnosisStore';
 import {
+  BodyRegionId,
+  ClinicalAttachmentImage,
   DiagnosisRequestPayload,
   DynamicFollowUpAnswerItem,
   DynamicFollowUpQuestion,
   OnsetPattern,
+  SelfTreatmentId,
+  TreatmentResponseLevel,
   TriggerOrReliefFactorId,
 } from '@/types/cdss';
 import { evaluateObjectiveVitalSigns } from '@/lib/vitalSignsEvaluator';
 import { fetchDynamicFollowUpQuestionsIsomorphic } from '@/lib/diagnosisStreamRunner';
+import { GlossaryText } from './GlossaryText';
+
+const SELF_TREATMENT_OPTIONS: Array<{ id: SelfTreatmentId; labelZh: string }> = [
+  { id: 'analgesic_nsaids', labelZh: '止痛消炎藥（普拿疼／NSAIDs）' },
+  { id: 'antacid_ppi', labelZh: '胃藥／制酸劑' },
+  { id: 'antihistamine', labelZh: '抗組織胺／過敏藥' },
+  { id: 'cold_otc', labelZh: '感冒成藥' },
+  { id: 'ice_pack', labelZh: '冰敷' },
+  { id: 'heat_pack', labelZh: '熱敷' },
+  { id: 'rest_lying', labelZh: '休息平躺' },
+];
+
+const TREATMENT_RESPONSE_OPTIONS: Array<{
+  id: TreatmentResponseLevel;
+  labelZh: string;
+}> = [
+  { id: 'significant_relief', labelZh: '明顯緩解' },
+  { id: 'mild_relief', labelZh: '稍微緩解' },
+  { id: 'no_effect', labelZh: '完全無效' },
+  { id: 'worsened', labelZh: '反而加重' },
+];
+
+/**
+ * 純前端 Canvas 安全預處理：等比例縮放至長邊上限 1024px、JPEG 品質 0.8，
+ * 重新繪製像素以自動剝除照片中的 EXIF GPS 定位與裝置個資。
+ */
+async function compressAndStripExifToJpeg(
+  file: File
+): Promise<ClinicalAttachmentImage> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('讀取圖片失敗'));
+    reader.readAsDataURL(file);
+  });
+
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error('圖片格式不支援'));
+    el.src = dataUrl;
+  });
+
+  const MAX_EDGE = 1024;
+  const scale = Math.min(1, MAX_EDGE / Math.max(img.width, img.height, 1));
+  const width = Math.max(1, Math.round(img.width * scale));
+  const height = Math.max(1, Math.round(img.height * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('瀏覽器不支援 Canvas 壓縮');
+  }
+  ctx.drawImage(img, 0, 0, width, height);
+
+  const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+  const base64Data = jpegDataUrl.split(',')[1] || '';
+  const sizeKb = Math.max(1, Math.round((base64Data.length * 3) / 4 / 1024));
+
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    fileName: file.name,
+    mimeType: 'image/jpeg',
+    base64Data,
+    previewDataUrl: jpegDataUrl,
+    width,
+    height,
+    sizeKb,
+  };
+}
 
 interface TwoStageFollowUpModalProps {
-  onConfirmAndStartDiagnosis: (
-    dynamicAnswers: {
-      wasSkipped: boolean;
-      answers: DynamicFollowUpAnswerItem[];
-    }
-  ) => void;
+  onConfirmAndStartDiagnosis: (params: {
+    wasSkipped: boolean;
+    answers: DynamicFollowUpAnswerItem[];
+    attachments?: ClinicalAttachmentImage[];
+  }) => void;
 }
 
 const ONSET_OPTIONS: Array<{
@@ -89,6 +171,8 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
   onConfirmAndStartDiagnosis,
 }) => {
   const {
+    apiSettings,
+    setApiModalOpen,
     isFollowUpModalOpen,
     setFollowUpModalOpen,
     followUp,
@@ -105,11 +189,27 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
   const [hypothesesSummaryZh, setHypothesesSummaryZh] = useState('');
   const [dynamicQuestions, setDynamicQuestions] = useState<DynamicFollowUpQuestion[]>([]);
   const [selectedOptionMap, setSelectedOptionMap] = useState<Record<string, string>>({});
+  const [attachments, setAttachments] = useState<ClinicalAttachmentImage[]>([]);
+  const [isCompressingImages, setIsCompressingImages] = useState(false);
+  const [imageErrorMsg, setImageErrorMsg] = useState<string | null>(null);
+
+  const regionRecords = Object.values(selectedRegions);
+
+  // 同步「症狀出現先後順序」與當前已選部位清單
+  const orderedRegionIds = useMemo<BodyRegionId[]>(() => {
+    const currentIds = regionRecords.map((r) => r.regionId);
+    const saved = (followUp.regionOnsetOrder || []).filter((id) =>
+      currentIds.includes(id)
+    );
+    const remaining = currentIds.filter((id) => !saved.includes(id));
+    return [...saved, ...remaining];
+  }, [regionRecords, followUp.regionOnsetOrder]);
 
   // 當 Modal 打開時重置回 Step 1
   useEffect(() => {
     if (isFollowUpModalOpen) {
       setStep('step1_vitals');
+      setImageErrorMsg(null);
     }
   }, [isFollowUpModalOpen]);
 
@@ -120,17 +220,78 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
 
   if (!isFollowUpModalOpen) return null;
 
-  const regionRecords = Object.values(selectedRegions);
+  const moveRegionOrder = (index: number, delta: -1 | 1) => {
+    const targetIdx = index + delta;
+    if (targetIdx < 0 || targetIdx >= orderedRegionIds.length) return;
+    const next = [...orderedRegionIds];
+    const [moved] = next.splice(index, 1);
+    next.splice(targetIdx, 0, moved);
+    updateFollowUp({ regionOnsetOrder: next });
+  };
+
+  const toggleSelfTreatment = (id: SelfTreatmentId) => {
+    const current = followUp.selfTreatments || [];
+    const next = current.includes(id)
+      ? current.filter((t) => t !== id)
+      : [...current, id];
+    updateFollowUp({
+      selfTreatments: next,
+      treatmentResponse: next.length === 0 ? undefined : followUp.treatmentResponse,
+    });
+  };
+
+  const handleImageFilesChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+
+    const remainingSlots = Math.max(0, 3 - attachments.length);
+    if (remainingSlots === 0) {
+      setImageErrorMsg('最多僅可附加 3 張圖片，請先移除不需要的圖片。');
+      return;
+    }
+
+    setImageErrorMsg(null);
+    setIsCompressingImages(true);
+    try {
+      const processed: ClinicalAttachmentImage[] = [];
+      for (const file of files.slice(0, remainingSlots)) {
+        if (!file.type.startsWith('image/')) continue;
+        const compressed = await compressAndStripExifToJpeg(file);
+        processed.push(compressed);
+      }
+      if (processed.length > 0) {
+        setAttachments((prev) => [...prev, ...processed].slice(0, 3));
+      }
+    } catch (err) {
+      setImageErrorMsg(
+        err instanceof Error ? err.message : '圖片壓縮失敗，請更換其他照片。'
+      );
+    } finally {
+      setIsCompressingImages(false);
+    }
+  };
+
+  const hasValidGeminiKey =
+    apiSettings.enabled && apiSettings.apiKey.trim().length >= 12;
 
   const handleProceedToDynamicQuestions = async () => {
     setStep('step2_dynamic');
     setIsLoadingQuestions(true);
 
+    const normalizedFollowUp =
+      orderedRegionIds.length > 1
+        ? { ...followUp, regionOnsetOrder: orderedRegionIds }
+        : followUp;
+
     const basePayload: Omit<DiagnosisRequestPayload, 'dynamicAnswers'> = {
       contextProfile,
       regionRecords,
       systemicSymptomIds,
-      followUp,
+      followUp: normalizedFollowUp,
+      attachments,
       clientTimestamp: new Date().toISOString(),
     };
 
@@ -157,7 +318,6 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
     setHypothesesSummaryZh(res.clinicalContextSummaryZh);
     setDynamicQuestions(normalizedQuestions);
 
-    // 預選尚未作答題目的第一個或保留空白供使用者點選
     const initAnswers: Record<string, string> = {};
     normalizedQuestions.forEach((q) => {
       if (selectedOptionMap[q.questionId]) {
@@ -169,14 +329,21 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
   };
 
   const handleSkipDynamicAndRun = () => {
+    if (orderedRegionIds.length > 1) {
+      updateFollowUp({ regionOnsetOrder: orderedRegionIds });
+    }
     setFollowUpModalOpen(false);
     onConfirmAndStartDiagnosis({
       wasSkipped: true,
       answers: [],
+      attachments,
     });
   };
 
   const handleSubmitDynamicAndRun = () => {
+    if (orderedRegionIds.length > 1) {
+      updateFollowUp({ regionOnsetOrder: orderedRegionIds });
+    }
     const answers: DynamicFollowUpAnswerItem[] = [];
     for (const q of dynamicQuestions) {
       const chosenOptId = selectedOptionMap[q.questionId];
@@ -197,6 +364,7 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
     onConfirmAndStartDiagnosis({
       wasSkipped: answers.length === 0,
       answers,
+      attachments,
     });
   };
 
@@ -308,7 +476,7 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
                   <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-200">
-                        3. 不適／疼痛嚴重度 (VAS 1–10 分)
+                        3. 不適／疼痛嚴重度 (<GlossaryText text="VAS" /> 1–10 分)
                       </span>
                       <span
                         className={`rounded-md px-2 py-0.5 text-xs font-bold ${
@@ -574,6 +742,258 @@ export const TwoStageFollowUpModal: React.FC<TwoStageFollowUpModalProps> = ({
                     className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
                   />
                 </div>
+              </div>
+
+              {/* 6. 發作先後順序與疼痛轉移路徑（選填，標記超過 1 個部位時顯示） */}
+              {orderedRegionIds.length > 1 && (
+                <div className="rounded-xl border border-amber-500/30 bg-slate-950/75 p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                      6. 症狀出現先後順序與疼痛轉移路徑（選填）
+                    </label>
+                    <span className="text-[11px] text-slate-400">
+                      使用箭頭調整順序（1. 最先發生 → 2. 隨後出現）
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {orderedRegionIds.map((rId, idx) => {
+                      const rec = selectedRegions[rId];
+                      if (!rec) return null;
+                      return (
+                        <div
+                          key={rId}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-xs"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span
+                              className={`rounded-md px-2 py-0.5 text-[11px] font-extrabold shrink-0 ${
+                                idx === 0
+                                  ? 'bg-amber-500 text-slate-950'
+                                  : 'bg-slate-800 text-cyan-300 border border-slate-700'
+                              }`}
+                            >
+                              {idx === 0
+                                ? '1. 最先發生'
+                                : `${idx + 1}. 隨後出現／轉移至此`}
+                            </span>
+                            <span className="font-semibold text-slate-100 truncate">
+                              {rec.regionNameZh}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => moveRegionOrder(idx, -1)}
+                              className="p-1 rounded border border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                              title="上移順序"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === orderedRegionIds.length - 1}
+                              onClick={() => moveRegionOrder(idx, 1)}
+                              className="p-1 rounded border border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                              title="下移順序"
+                            >
+                              <ArrowDown className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <label className="flex items-start gap-2.5 rounded-lg border border-slate-800 bg-slate-900/60 p-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(followUp.hasSymptomMigration)}
+                      onChange={(e) =>
+                        updateFollowUp({ hasSymptomMigration: e.target.checked })
+                      }
+                      className="mt-0.5 rounded border-slate-700 bg-slate-900 accent-amber-400"
+                    />
+                    <span className="text-xs text-slate-200 leading-snug">
+                      症狀／疼痛有明顯從原部位轉移到新部位（例如：先肚臍／中上腹悶痛，數小時後轉移並固定至右下腹）
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {/* 7. 已自行處置與用藥反應（選填） */}
+              <div className="rounded-xl border border-slate-800 bg-slate-950/75 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Pill className="w-4 h-4 text-cyan-400 shrink-0" />
+                  <label className="text-xs font-bold uppercase tracking-wider text-cyan-400">
+                    {orderedRegionIds.length > 1 ? '7.' : '6.'} 發作後是否曾自行處置或服用成藥？（選填）
+                  </label>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {SELF_TREATMENT_OPTIONS.map((item) => {
+                    const checked = (followUp.selfTreatments || []).includes(
+                      item.id
+                    );
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => toggleSelfTreatment(item.id)}
+                        className={`rounded-lg border px-2.5 py-1.5 text-xs transition-all cursor-pointer ${
+                          checked
+                            ? 'border-cyan-400 bg-cyan-950/60 text-cyan-200 font-bold'
+                            : 'border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-700'
+                        }`}
+                      >
+                        {checked ? '✓ ' : ''}
+                        {item.labelZh}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[11px] font-semibold text-slate-400 block">
+                    處置或服藥後的反應（單選）：
+                  </span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {TREATMENT_RESPONSE_OPTIONS.map((resp) => {
+                      const active = followUp.treatmentResponse === resp.id;
+                      return (
+                        <button
+                          key={resp.id}
+                          type="button"
+                          onClick={() =>
+                            updateFollowUp({
+                              treatmentResponse: active ? undefined : resp.id,
+                            })
+                          }
+                          className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                            active
+                              ? resp.id === 'worsened'
+                                ? 'border-rose-400 bg-rose-950/70 text-rose-200'
+                                : 'border-emerald-400 bg-emerald-950/60 text-emerald-200'
+                              : 'border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700'
+                          }`}
+                        >
+                          {resp.labelZh}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* 8. Gemini 多模態能力：補充照片或檢驗報告（選填，最多 3 張） */}
+              <div className="rounded-xl border border-slate-800 bg-slate-950/75 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Camera className="w-4 h-4 text-cyan-400 shrink-0" />
+                    <label className="text-xs font-bold uppercase tracking-wider text-cyan-400">
+                      {orderedRegionIds.length > 1 ? '8.' : '7.'} 補充患部外觀照片或檢驗報告（選填，最多 3 張）
+                    </label>
+                  </div>
+                  <span className="text-[11px] text-slate-400">
+                    支援皮膚皮疹／紅腫水泡、口腔喉嚨、眼部充血或健檢抽血數值單
+                  </span>
+                </div>
+
+                {/* 醒目隱私提醒與 EXIF 剝除說明 */}
+                <div className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-950/30 px-3 py-2.5 text-[11px] text-amber-200 leading-relaxed">
+                  <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    圖片僅於瀏覽器端壓縮（上限 1024px・自動剝除 EXIF 定位與裝置個資）後直傳 Gemini API 分析，不留存於任何伺服器；上傳檢驗單前請先遮蔽姓名與身分證字號。
+                  </span>
+                </div>
+
+                {!hasValidGeminiKey && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-900/90 px-3 py-2 text-xs text-slate-300">
+                    <span>
+                      目前為「基礎規則模式」：需設定 Gemini API Key 才能啟用影像與檢驗單 AI 判讀。
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setApiModalOpen(true)}
+                      className="text-xs font-bold text-cyan-400 hover:text-cyan-300 underline underline-offset-4 cursor-pointer"
+                    >
+                      立即設定 API Key
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <label
+                    className={`inline-flex items-center gap-2 rounded-xl border border-dashed px-4 py-2.5 text-xs font-bold transition-colors ${
+                      attachments.length >= 3 || isCompressingImages
+                        ? 'border-slate-700 bg-slate-900 text-slate-500 cursor-not-allowed'
+                        : 'border-cyan-500/50 bg-cyan-950/30 hover:bg-cyan-950/60 text-cyan-200 cursor-pointer'
+                    }`}
+                  >
+                    {isCompressingImages ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                    ) : (
+                      <Upload className="w-4 h-4 text-cyan-400" />
+                    )}
+                    <span>
+                      {isCompressingImages
+                        ? '正在壓縮與清除 EXIF...'
+                        : `選擇照片／檢驗單 (${attachments.length}/3)`}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      disabled={attachments.length >= 3 || isCompressingImages}
+                      onChange={handleImageFilesChange}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {imageErrorMsg && (
+                    <span className="text-xs text-rose-400 font-semibold">
+                      {imageErrorMsg}
+                    </span>
+                  )}
+                </div>
+
+                {attachments.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                    {attachments.map((att) => (
+                      <div
+                        key={att.id}
+                        className="relative rounded-xl border border-slate-800 bg-slate-900 p-2 flex items-center gap-2.5"
+                      >
+                        <img
+                          src={att.previewDataUrl}
+                          alt={att.fileName}
+                          className="w-12 h-12 rounded-lg object-cover border border-slate-700 shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[11px] font-bold text-slate-200 truncate">
+                            {att.fileName}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {att.width}×{att.height} · {att.sizeKb} KB (EXIF 已除)
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAttachments((prev) =>
+                              prev.filter((item) => item.id !== att.id)
+                            )
+                          }
+                          className="p-1 text-slate-400 hover:text-rose-400 shrink-0 cursor-pointer"
+                          title="移除圖片"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           ) : (

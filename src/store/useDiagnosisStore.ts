@@ -20,7 +20,11 @@ import {
 export type InputViewMode = '3d' | '2d';
 export type CameraOrientation = 'anterior' | 'posterior';
 
-export type CameraFocusPreset = 'full_body' | 'head_neck';
+export type CameraFocusPreset =
+  | 'full_body'
+  | 'head_neck'
+  | 'chest_abdomen'
+  | 'pelvis_legs';
 
 export interface ApiConnectionTestState {
   status: 'idle' | 'testing' | 'success' | 'error';
@@ -127,6 +131,10 @@ const DEFAULT_FOLLOW_UP: ClinicalFollowUpParams = {
   modifyingFactors: [],
   radiationNote: '',
   vitals: {},
+  regionOnsetOrder: [],
+  hasSymptomMigration: false,
+  selfTreatments: [],
+  treatmentResponse: undefined,
 };
 
 function buildOrCleanupRegionRecord(

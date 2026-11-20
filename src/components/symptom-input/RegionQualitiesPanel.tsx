@@ -49,6 +49,7 @@ export function RegionQualitiesPanel({
   isModalMode = false,
 }: RegionQualitiesPanelProps) {
   const {
+    contextProfile,
     activeRegionId,
     selectedRegions,
     setActiveRegion,
@@ -116,7 +117,8 @@ export function RegionQualitiesPanel({
   const selectedQualityIds = currentRecord?.qualityIds || [];
   const selectedSpecificIds = currentRecord?.specificSymptomIds || [];
   const regionSpecificList = getSpecificSymptomsByRegion(
-    activeRegionId as BodyRegionId
+    activeRegionId as BodyRegionId,
+    contextProfile.biologicalSex
   );
 
   return (

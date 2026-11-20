@@ -145,6 +145,12 @@ export function ReportExportModal({
       });
     }
 
+    if (primaryResult?.multimodalFindingsZh) {
+      lines.push('');
+      lines.push('【影像／檢驗單判讀發現】');
+      lines.push(primaryResult.multimodalFindingsZh);
+    }
+
     if (primaryResult) {
       lines.push('');
       lines.push('【三、最有可能之具體疾病鑑別清單】');

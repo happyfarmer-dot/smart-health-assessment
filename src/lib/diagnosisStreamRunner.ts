@@ -65,6 +65,9 @@ async function enhanceWithOptionalGeminiKey(
 }> {
   try {
     const cp = payload.contextProfile;
+    const isElderly65Plus =
+      cp.ageGroup === '65+' ||
+      (typeof cp.exactAge === 'number' && cp.exactAge >= 65);
     const bmiText =
       cp.heightCm && cp.weightKg
         ? `${cp.heightCm}cm / ${cp.weightKg}kg (BMI ${(
@@ -73,20 +76,72 @@ async function enhanceWithOptionalGeminiKey(
           ).toFixed(1)})`
         : '未填身高體重';
 
+    const onsetSeqText =
+      payload.followUp.regionOnsetOrder &&
+      payload.followUp.regionOnsetOrder.length > 1
+        ? `${payload.followUp.regionOnsetOrder.join(' -> ')}（轉移現象：${
+            payload.followUp.hasSymptomMigration ? '是' : '否'
+          }）`
+        : '單一部位或未指定先後順序';
+
+    const treatmentText =
+      payload.followUp.selfTreatments &&
+      payload.followUp.selfTreatments.length > 0
+        ? `曾使用：${payload.followUp.selfTreatments.join(', ')}；反應：${
+            payload.followUp.treatmentResponse || '未指定'
+          }`
+        : '未填寫自行處置';
+
+    const elderlyDirective = isElderly65Plus
+      ? '\n4. 【高齡（65歲以上）強制臨床加權指令】：患者屬 65 歲以上長者，務必強制提高對「高齡非典型表現」之警覺（例如長者心肌梗塞常僅表現為上腹悶痛、呼吸微喘或極度虛弱；重症感染常僅表現為嗜睡、食慾驟降或意識改變而不一定發高燒），並在解析中主動提醒相關鑑別風險。'
+      : '';
+
+    const hasAttachments = Boolean(
+      payload.attachments && payload.attachments.length > 0
+    );
+
     const prompt = `你是一位資深現代西醫多專科會診 (MDT) 主治醫師（涵蓋內外婦兒、眼科、耳鼻喉科、牙科／口腔顎面外科、精神科／身心科、乳房外科、大腸直腸外科、泌尿科、皮膚科、神經內外科、骨科／復健科、血液腫瘤科、感染科）。
-請根據以下患者完整生理情境卡與初步鑑別結果，以 JSON 格式微調強化「referredPainAndSystemicLinkZh（跨科轉移痛與全身關聯白話解析）」與第一順疑似疾病的「pathophysiologyPlainZh（白話病理機轉）」。
+請根據以下患者完整生理情境卡、發作順序、用藥反應${
+      hasAttachments ? '與附帶患部照片／檢驗報告影像' : ''
+    }以及初步鑑別結果，以 JSON 格式微調強化「referredPainAndSystemicLinkZh（跨科轉移痛與全身關聯白話解析）」與第一順疑似疾病的「pathophysiologyPlainZh（白話病理機轉）」${
+      hasAttachments
+        ? '，並針對所附影像或檢驗單據輸出獨立的「multimodalFindingsZh（影像／檢驗單判讀發現，繁體中文白話臨床觀察與建議）」'
+        : ''
+    }。
 嚴格遵守：
 1. 僅限現代實證西醫（嚴禁任何中醫詞彙）。
 2. 保持冷靜、客觀、一般大眾易懂的白話文。
-3. 僅回傳合法 JSON：{"enhancedPathophysiologyZh": "...", "enhancedReferredPainLinkZh": "..."}
+3. 僅回傳合法 JSON：{"enhancedPathophysiologyZh": "...", "enhancedReferredPainLinkZh": "...", "glossary_terms": [{"term": "專有名詞或檢查", "category": "抽血檢驗|無痛影像檢查|侵入性內視鏡|心電圖／生理檢查|臨床徵象／術語", "plain_explanation": "1~2句白話解釋"}]${
+      hasAttachments ? ', "multimodalFindingsZh": "..."' : ''
+    }}${elderlyDirective}
 
 患者年齡/性別/體態：${cp.ageGroup} / ${cp.biologicalSex} / ${bmiText}
 生活習慣：抽菸(${cp.smokingStatus || 'never'})、飲酒(${cp.alcoholHabit || 'none'})、檳榔(${cp.betelNutHabit || 'never'})、運動(${cp.exerciseFrequency || 'moderate_1_2_week'})
 慢性病與家族史：慢性病(${cp.chronicConditions.join(',') || '無'} ${cp.customChronicNote || ''})、家族史(${(cp.familyHistory || []).join(',') || '無'})、過敏史(${cp.drugAndFoodAllergies || '無'})
 固定用藥與近期特殊事件(TOCC)：用藥(${cp.highRiskMedications.join(',') || '無'} ${cp.customMedicationNote || ''})、TOCC(${(cp.recentEventsTocc || []).join(',') || '無'} ${cp.customToccNote || ''})
 標記部位：${payload.regionRecords.map((r) => `${r.regionNameZh}(${r.depthLayer}): ${[...r.qualityLabelsZh, ...r.specificSymptomLabelsZh].join('、')}`).join('；')}
+發作先後順序與轉移：${onsetSeqText}
+已自行處置與反應：${treatmentText}
 全身症狀ID：${payload.systemicSymptomIds.join('、') || '無'}
 第一順疑似疾病：${basePrimary.topSuspectedDiseases[0]?.diseaseNameZh || ''} (${basePrimary.topSuspectedDiseases[0]?.diseaseNameEn || ''})`;
+
+    const requestParts: Array<
+      | { text: string }
+      | { inlineData: { mimeType: string; data: string } }
+    > = [{ text: prompt }];
+
+    if (hasAttachments && payload.attachments) {
+      for (const att of payload.attachments.slice(0, 3)) {
+        if (att.base64Data) {
+          requestParts.push({
+            inlineData: {
+              mimeType: att.mimeType || 'image/jpeg',
+              data: att.base64Data,
+            },
+          });
+        }
+      }
+    }
 
     const targetModel = modelId || 'gemini-2.5-flash';
     const response = await fetch(
@@ -97,7 +152,7 @@ async function enhanceWithOptionalGeminiKey(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
+          contents: [{ parts: requestParts }],
           generationConfig: {
             temperature: 0.2,
             responseMimeType: 'application/json',
@@ -112,8 +167,48 @@ async function enhanceWithOptionalGeminiKey(
     if (!rawText) return { primary: basePrimary, diff: baseDiff };
 
     const parsed = JSON.parse(rawText);
+    const parsedGlossary = Array.isArray(parsed.glossary_terms)
+      ? parsed.glossary_terms
+          .filter(
+            (g: unknown): g is {
+              term: string;
+              category:
+                | '抽血檢驗'
+                | '無痛影像檢查'
+                | '侵入性內視鏡'
+                | '心電圖／生理檢查'
+                | '臨床徵象／術語';
+              plain_explanation: string;
+            } =>
+              Boolean(
+                g &&
+                  typeof g === 'object' &&
+                  'term' in g &&
+                  'plain_explanation' in g &&
+                  typeof (g as { term?: unknown }).term === 'string' &&
+                  typeof (g as { plain_explanation?: unknown }).plain_explanation ===
+                    'string'
+              )
+          )
+          .map((g: { term: string; category?: string; plain_explanation: string }) => ({
+            term: g.term,
+            category:
+              (g.category as
+                | '抽血檢驗'
+                | '無痛影像檢查'
+                | '侵入性內視鏡'
+                | '心電圖／生理檢查'
+                | '臨床徵象／術語') || '臨床徵象／術語',
+            plain_explanation: g.plain_explanation,
+          }))
+      : undefined;
+
     const nextPrimary: PrimaryDiagnosisResult = {
       ...basePrimary,
+      multimodalFindingsZh: parsed.multimodalFindingsZh
+        ? String(parsed.multimodalFindingsZh)
+        : basePrimary.multimodalFindingsZh,
+      glossary_terms: parsedGlossary,
       topSuspectedDiseases: basePrimary.topSuspectedDiseases.map((d, idx) =>
         idx === 0 && parsed.enhancedPathophysiologyZh
           ? {

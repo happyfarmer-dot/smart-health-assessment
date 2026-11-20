@@ -199,6 +199,7 @@ export interface RegionSpecificSymptomItem {
   colloquialAliases: string[];
   meshTermsEn: string[];
   isRedFlagWeight?: boolean;
+  biologicalSexFilter?: 'male' | 'female' | 'all';
 }
 
 /** 單一部位已選取的完整臨床資料 */
@@ -265,6 +266,32 @@ export interface ObjectiveVitalSigns {
   glucoseTiming?: 'fasting' | 'postprandial';
 }
 
+export type SelfTreatmentId =
+  | 'analgesic_nsaids'     // 止痛消炎藥（普拿疼／NSAIDs）
+  | 'antacid_ppi'          // 胃藥／制酸劑
+  | 'antihistamine'        // 抗組織胺／過敏藥
+  | 'cold_otc'             // 感冒成藥
+  | 'ice_pack'             // 冰敷
+  | 'heat_pack'            // 熱敷
+  | 'rest_lying';          // 休息平躺
+
+export type TreatmentResponseLevel =
+  | 'significant_relief'   // 明顯緩解
+  | 'mild_relief'          // 稍微緩解
+  | 'no_effect'            // 完全無效
+  | 'worsened';            // 反而加重
+
+export interface ClinicalAttachmentImage {
+  id: string;
+  fileName: string;
+  mimeType: 'image/jpeg';
+  base64Data: string;
+  previewDataUrl: string;
+  width: number;
+  height: number;
+  sizeKb: number;
+}
+
 export interface ClinicalFollowUpParams {
   onsetPattern: OnsetPattern;
   durationLabelZh: string;
@@ -272,6 +299,10 @@ export interface ClinicalFollowUpParams {
   modifyingFactors: TriggerOrReliefFactorId[];
   radiationNote?: string;
   vitals: ObjectiveVitalSigns;
+  regionOnsetOrder?: BodyRegionId[];
+  hasSymptomMigration?: boolean;
+  selfTreatments?: SelfTreatmentId[];
+  treatmentResponse?: TreatmentResponseLevel;
 }
 
 /** 模組 D-2：AI 動態鑑別追問 (Hypothesis-Driven Follow-up) */
@@ -303,6 +334,7 @@ export interface DiagnosisRequestPayload {
     wasSkipped: boolean;
     answers: DynamicFollowUpAnswerItem[];
   };
+  attachments?: ClinicalAttachmentImage[];
   clientTimestamp: string;
 }
 
@@ -358,10 +390,26 @@ export interface SuspectedDiseaseDiagnosis {
   }>;
 }
 
+export type GlossaryTermCategory =
+  | '抽血檢驗'
+  | '無痛影像檢查'
+  | '侵入性內視鏡'
+  | '心電圖／生理檢查'
+  | '臨床徵象／術語';
+
+export interface GlossaryTermItem {
+  term: string;
+  category: GlossaryTermCategory;
+  plain_explanation: string;
+  aliases?: string[];
+}
+
 export interface PrimaryDiagnosisResult {
   diagnosticConfidence: DiagnosticConfidenceAssessment;
   topSuspectedDiseases: SuspectedDiseaseDiagnosis[];
   iatrogenicAlerts: IatrogenicDrugAlertItem[];
+  multimodalFindingsZh?: string;
+  glossary_terms?: GlossaryTermItem[];
 }
 
 export interface SecondaryDifferentialItem {

@@ -6,16 +6,23 @@ import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { BODY_REGIONS } from '@/data/bodyRegions';
+import { BODY_REGIONS, BODY_GROUP_THEME } from '@/data/bodyRegions';
 import { useDiagnosisStore } from '@/store/useDiagnosisStore';
 import { BodyRegionDefinition, BodyRegionId } from '@/types/cdss';
 
+export type ModelGenderVariant = 'male' | 'female';
+
+interface CachedGlbEntry {
+  group: THREE.Group | null;
+  found: boolean;
+  resolvedVariant: 'male' | 'female' | 'default' | 'fallback';
+}
+
 /**
- * 全域輕量快取：避免在 2D 與 3D 模式間切換時重複下載 20MB 的 .glb 模型
+ * 全域輕量快取：依模型路徑/性別快取已正規化模型，避免切換性別或 2D/3D 時重複下載
  */
-let cachedNormalizedGlbGroup: THREE.Group | null = null;
-let cachedGlbAttemptFinished = false;
-let cachedGlbFound = false;
+const cachedGlbByGender = new Map<ModelGenderVariant, CachedGlbEntry>();
+const cachedUrlToGroup = new Map<string, THREE.Group>();
 
 /**
  * 醫療科技感 Fresnel 邊緣輪廓光 Shader (Rim Glow ShaderMaterial)
@@ -69,6 +76,8 @@ export interface ModelBoundsInfo {
 export interface ModelCalibrationParams {
   debugHitbox: boolean;
   showRegionBoundaries: boolean;
+  showOrganXray: boolean;
+  modelGender: ModelGenderVariant;
   hideHtmlLabels: boolean;
   yOffset: number;
   scaleMultiplier: number;
@@ -76,6 +85,7 @@ export interface ModelCalibrationParams {
     isLoading: boolean;
     progressPct: number;
     usingFallback: boolean;
+    resolvedVariant?: 'male' | 'female' | 'default' | 'fallback';
   }) => void;
   onBoundsComputed?: (bounds: ModelBoundsInfo) => void;
 }
@@ -88,21 +98,60 @@ export interface ModelCalibrationParams {
  * 4. 保留原始 `.glb` 肌肉與皮膚 `map` / `normalMap` 貼圖（調整為低反光霧面質感），並克隆一層 `scale * 1.006` 的透明外殼套用 Fresnel 邊緣輪廓光 Shader
  * 5. 若尚未放入 `.glb` 或載入失敗，自動無縫降級至具備 Fresnel 輪廓光的平滑備援人體輪廓
  */
+function applyXrayToGroup(group: THREE.Group | null, isXray: boolean) {
+  if (!group) return;
+  group.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const applyMat = (mat: THREE.Material) => {
+      if (mat instanceof THREE.ShaderMaterial) {
+        if (mat.uniforms?.uRimIntensity) {
+          mat.uniforms.uRimIntensity.value = isXray ? 1.55 : 1.1;
+        }
+        return;
+      }
+      const stdMat = mat as THREE.MeshStandardMaterial;
+      if (stdMat && 'opacity' in stdMat) {
+        if (isXray) {
+          stdMat.transparent = true;
+          stdMat.opacity = 0.24;
+          stdMat.depthWrite = false;
+          stdMat.roughness = 0.38;
+        } else {
+          stdMat.transparent = false;
+          stdMat.opacity = 1.0;
+          stdMat.depthWrite = true;
+          stdMat.roughness = Math.max(stdMat.roughness ?? 0.56, 0.56);
+        }
+        stdMat.needsUpdate = true;
+      }
+    };
+    if (Array.isArray(mesh.material)) {
+      mesh.material.forEach(applyMat);
+    } else if (mesh.material) {
+      applyMat(mesh.material);
+    }
+  });
+}
+
 function UnifiedVisualBodyMeshLayer({
   yOffset,
   scaleMultiplier,
+  modelGender,
+  showOrganXray,
   onModelStatusChange,
 }: {
   yOffset: number;
   scaleMultiplier: number;
+  modelGender: ModelGenderVariant;
+  showOrganXray: boolean;
   onModelStatusChange?: ModelCalibrationParams['onModelStatusChange'];
 }) {
+  const initialCache = cachedGlbByGender.get(modelGender);
   const [externalGlbGroup, setExternalGlbGroup] = useState<THREE.Group | null>(
-    cachedNormalizedGlbGroup
+    initialCache?.group ?? null
   );
-  const [isLoadingGlb, setIsLoadingGlb] = useState<boolean>(
-    !cachedGlbAttemptFinished
-  );
+  const [isLoadingGlb, setIsLoadingGlb] = useState<boolean>(!initialCache);
   const [loadingPct, setLoadingPct] = useState<number>(0);
 
   const fresnelMaterial = useMemo(() => createFresnelRimShaderMaterial(), []);
@@ -113,16 +162,26 @@ function UnifiedVisualBodyMeshLayer({
     };
   }, [fresnelMaterial]);
 
+  // 切換「透視內臟參考」時即時調整外部 .glb 表皮半透明 X 光質感
+  useEffect(() => {
+    if (externalGlbGroup) {
+      applyXrayToGroup(externalGlbGroup, showOrganXray);
+    }
+  }, [externalGlbGroup, showOrganXray]);
+
   useEffect(() => {
     let isMounted = true;
 
-    if (cachedGlbAttemptFinished) {
-      setExternalGlbGroup(cachedNormalizedGlbGroup);
+    const existing = cachedGlbByGender.get(modelGender);
+    if (existing) {
+      setExternalGlbGroup(existing.group);
+      applyXrayToGroup(existing.group, showOrganXray);
       setIsLoadingGlb(false);
       onModelStatusChange?.({
         isLoading: false,
         progressPct: 100,
-        usingFallback: !cachedGlbFound,
+        usingFallback: !existing.found,
+        resolvedVariant: existing.resolvedVariant,
       });
       return;
     }
@@ -131,13 +190,32 @@ function UnifiedVisualBodyMeshLayer({
       /\/$/,
       ''
     );
-    const candidateUrls = Array.from(
-      new Set([
-        basePath ? `${basePath}/models/human_body.glb` : './models/human_body.glb',
-        '/models/human_body.glb',
-        './models/human_body.glb',
-      ])
-    );
+    const buildCandidates = (fileName: string) =>
+      Array.from(
+        new Set([
+          basePath ? `${basePath}/models/${fileName}` : `./models/${fileName}`,
+          `/models/${fileName}`,
+          `./models/${fileName}`,
+        ])
+      );
+
+    const genderFile =
+      modelGender === 'female'
+        ? 'human_body_female.glb'
+        : 'human_body_male.glb';
+    const candidateSources: Array<{
+      url: string;
+      variant: 'male' | 'female' | 'default';
+    }> = [
+      ...buildCandidates(genderFile).map((url) => ({
+        url,
+        variant: modelGender,
+      })),
+      ...buildCandidates('human_body.glb').map((url) => ({
+        url,
+        variant: 'default' as const,
+      })),
+    ];
 
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath(
@@ -156,47 +234,86 @@ function UnifiedVisualBodyMeshLayer({
         usingFallback: false,
       });
 
-      let validUrl: string | null = null;
-      for (const url of candidateUrls) {
+      let chosen: { url: string; variant: 'male' | 'female' | 'default' } | null =
+        null;
+      for (const candidate of candidateSources) {
+        if (cachedUrlToGroup.has(candidate.url)) {
+          chosen = candidate;
+          break;
+        }
         try {
-          const headRes = await fetch(url, { method: 'HEAD' });
+          const headRes = await fetch(candidate.url, { method: 'HEAD' });
           const contentType = headRes.headers.get('content-type') || '';
           if (headRes.ok && !contentType.includes('text/html')) {
-            validUrl = url;
+            chosen = candidate;
             break;
           }
         } catch {
-          // try next candidate
+          // 忽略單一檔案錯誤，自動嘗試下一候選路徑或備援模型
         }
       }
 
-      if (!validUrl) {
-        cachedGlbAttemptFinished = true;
-        cachedGlbFound = false;
+      if (!chosen) {
+        cachedGlbByGender.set(modelGender, {
+          group: null,
+          found: false,
+          resolvedVariant: 'fallback',
+        });
         if (isMounted) {
+          setExternalGlbGroup(null);
           setIsLoadingGlb(false);
           onModelStatusChange?.({
             isLoading: false,
             progressPct: 100,
             usingFallback: true,
+            resolvedVariant: 'fallback',
           });
         }
         dracoLoader.dispose();
         return;
       }
 
+      const preCached = cachedUrlToGroup.get(chosen.url);
+      if (preCached) {
+        cachedGlbByGender.set(modelGender, {
+          group: preCached,
+          found: true,
+          resolvedVariant: chosen.variant,
+        });
+        applyXrayToGroup(preCached, showOrganXray);
+        if (isMounted) {
+          setExternalGlbGroup(preCached);
+          setIsLoadingGlb(false);
+          setLoadingPct(100);
+          onModelStatusChange?.({
+            isLoading: false,
+            progressPct: 100,
+            usingFallback: false,
+            resolvedVariant: chosen.variant,
+          });
+        }
+        dracoLoader.dispose();
+        return;
+      }
+
+      const selectedSource = chosen;
       gltfLoader.load(
-        validUrl,
+        selectedSource.url,
         (gltf) => {
           if (!gltf?.scene) {
-            cachedGlbAttemptFinished = true;
-            cachedGlbFound = false;
+            cachedGlbByGender.set(modelGender, {
+              group: null,
+              found: false,
+              resolvedVariant: 'fallback',
+            });
             if (isMounted) {
+              setExternalGlbGroup(null);
               setIsLoadingGlb(false);
               onModelStatusChange?.({
                 isLoading: false,
                 progressPct: 100,
                 usingFallback: true,
+                resolvedVariant: 'fallback',
               });
             }
             dracoLoader.dispose();
@@ -206,7 +323,7 @@ function UnifiedVisualBodyMeshLayer({
           const rawScene = gltf.scene;
           rawScene.updateMatrixWorld(true);
 
-          // 規格 2：計算 THREE.Box3 邊界框並自動等比例正規化至標準身高（對齊 32 區感應熱區座標系：腳底 y = -1.75 至頭頂 y = +2.77，總高 4.52 單位）
+          // 計算 THREE.Box3 邊界框並自動等比例正規化至標準身高（對齊 32 區感應熱區座標系：腳底 y = -1.75 至頭頂 y = +2.77，總高 4.52 單位）
           const box = new THREE.Box3().setFromObject(rawScene);
           const size = new THREE.Vector3();
           const center = new THREE.Vector3();
@@ -218,7 +335,7 @@ function UnifiedVisualBodyMeshLayer({
           const safeHeight = size.y > 0.0001 ? size.y : 1.0;
           const uniformScale = TARGET_STANDARD_SPAN / safeHeight;
 
-          // 規格 3：保留原始肌肉與皮膚貼圖 (map, normalMap)，調整為低反光霧面質感，並克隆一層 scale * 1.006 的 Fresnel 邊緣輪廓光外殼
+          // 保留原始肌肉與皮膚貼圖 (map, normalMap)，調整為低反光霧面質感，並克隆一層 scale * 1.006 的 Fresnel 邊緣輪廓光外殼
           const meshesToCloneForFresnel: THREE.Mesh[] = [];
           rawScene.traverse((child) => {
             if ((child as THREE.Mesh).isMesh) {
@@ -229,7 +346,6 @@ function UnifiedVisualBodyMeshLayer({
               const adjustMat = (mat: THREE.Material) => {
                 const stdMat = mat as THREE.MeshStandardMaterial;
                 if (stdMat && ('roughness' in stdMat || 'metalness' in stdMat)) {
-                  // 保留原本的 map 與 normalMap，消除塑膠油光感
                   stdMat.roughness = Math.max(stdMat.roughness ?? 0.55, 0.56);
                   stdMat.metalness = Math.min(stdMat.metalness ?? 0.08, 0.12);
                   if (!stdMat.map) {
@@ -253,7 +369,6 @@ function UnifiedVisualBodyMeshLayer({
             }
           });
 
-          // 為每個皮膚/肌肉 Mesh 加上極微放大 (scale * 1.006) 的透明 Fresnel 輪廓光外殼
           const fresnelShellMat = createFresnelRimShaderMaterial();
           for (const srcMesh of meshesToCloneForFresnel) {
             if (!srcMesh.parent) continue;
@@ -274,9 +389,13 @@ function UnifiedVisualBodyMeshLayer({
           );
           normalizedContainer.add(rawScene);
 
-          cachedNormalizedGlbGroup = normalizedContainer;
-          cachedGlbAttemptFinished = true;
-          cachedGlbFound = true;
+          cachedUrlToGroup.set(selectedSource.url, normalizedContainer);
+          cachedGlbByGender.set(modelGender, {
+            group: normalizedContainer,
+            found: true,
+            resolvedVariant: selectedSource.variant,
+          });
+          applyXrayToGroup(normalizedContainer, showOrganXray);
 
           if (isMounted) {
             setExternalGlbGroup(normalizedContainer);
@@ -286,6 +405,7 @@ function UnifiedVisualBodyMeshLayer({
               isLoading: false,
               progressPct: 100,
               usingFallback: false,
+              resolvedVariant: selectedSource.variant,
             });
           }
           dracoLoader.dispose();
@@ -306,14 +426,19 @@ function UnifiedVisualBodyMeshLayer({
           }
         },
         () => {
-          cachedGlbAttemptFinished = true;
-          cachedGlbFound = false;
+          cachedGlbByGender.set(modelGender, {
+            group: null,
+            found: false,
+            resolvedVariant: 'fallback',
+          });
           if (isMounted) {
+            setExternalGlbGroup(null);
             setIsLoadingGlb(false);
             onModelStatusChange?.({
               isLoading: false,
               progressPct: 100,
               usingFallback: true,
+              resolvedVariant: 'fallback',
             });
           }
           dracoLoader.dispose();
@@ -327,7 +452,7 @@ function UnifiedVisualBodyMeshLayer({
       isMounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [modelGender]);
 
   // 內建平滑備援視覺底層：頭顱 + 頸部 + 斜方肌肩膀 + 胸廓 + 腰身曲線 + 骨盆 (LatheGeometry)
   const torsoHeadLatheGeo = useMemo(() => {
@@ -419,6 +544,12 @@ function UnifiedVisualBodyMeshLayer({
       }),
     []
   );
+
+  useEffect(() => {
+    matteAnatomicalMaterial.opacity = showOrganXray ? 0.22 : 0.86;
+    matteAnatomicalMaterial.depthWrite = !showOrganXray;
+    matteAnatomicalMaterial.needsUpdate = true;
+  }, [matteAnatomicalMaterial, showOrganXray]);
 
   // 元件卸載時釋放內建備援 Geometry 與 Material 記憶體
   useEffect(() => {
@@ -686,9 +817,186 @@ const HITBOX_COORDS_FALLBACK: Record<BodyRegionId, HitboxCoord> = {
   },
 };
 
+export function getRegionWorldCenter(
+  regionId: BodyRegionId,
+  usingFallback: boolean
+): [number, number, number] | null {
+  const coord = (
+    usingFallback ? HITBOX_COORDS_FALLBACK : HITBOX_COORDS_BUNDLED_GLB
+  )[regionId];
+  if (!coord) return null;
+  return [coord.pos[0], coord.pos[1] - 0.48, coord.pos[2]];
+}
+
+interface OrganRefSpec {
+  id: string;
+  labelZh: string;
+  posGlb: [number, number, number];
+  posFallback: [number, number, number];
+  scale: [number, number, number];
+  rot?: [number, number, number];
+  color: string;
+  emissive: string;
+}
+
+const INTERNAL_ORGAN_REFS: OrganRefSpec[] = [
+  {
+    id: 'heart',
+    labelZh: '心臟',
+    posGlb: [0.05, 1.62, -0.02],
+    posFallback: [0.05, 1.52, 0.04],
+    scale: [0.09, 0.11, 0.08],
+    rot: [0, 0, 0.25],
+    color: '#ef4444',
+    emissive: '#dc2626',
+  },
+  {
+    id: 'lung_r',
+    labelZh: '右肺葉',
+    posGlb: [-0.15, 1.66, -0.08],
+    posFallback: [-0.16, 1.56, 0.0],
+    scale: [0.11, 0.19, 0.1],
+    color: '#38bdf8',
+    emissive: '#0284c7',
+  },
+  {
+    id: 'lung_l',
+    labelZh: '左肺葉',
+    posGlb: [0.16, 1.66, -0.08],
+    posFallback: [0.17, 1.56, 0.0],
+    scale: [0.1, 0.18, 0.1],
+    color: '#38bdf8',
+    emissive: '#0284c7',
+  },
+  {
+    id: 'liver',
+    labelZh: '肝臟與膽囊',
+    posGlb: [-0.12, 1.31, -0.03],
+    posFallback: [-0.13, 1.15, 0.05],
+    scale: [0.15, 0.09, 0.1],
+    rot: [0, 0, 0.18],
+    color: '#d97706',
+    emissive: '#b45309',
+  },
+  {
+    id: 'gallbladder',
+    labelZh: '膽囊點',
+    posGlb: [-0.11, 1.22, 0.02],
+    posFallback: [-0.11, 1.06, 0.1],
+    scale: [0.032, 0.048, 0.032],
+    color: '#84cc16',
+    emissive: '#65a30d',
+  },
+  {
+    id: 'stomach',
+    labelZh: '胃',
+    posGlb: [0.09, 1.25, -0.01],
+    posFallback: [0.09, 1.08, 0.06],
+    scale: [0.1, 0.09, 0.08],
+    rot: [0, 0, -0.3],
+    color: '#f59e0b',
+    emissive: '#d97706',
+  },
+  {
+    id: 'spleen',
+    labelZh: '脾臟',
+    posGlb: [0.2, 1.29, -0.1],
+    posFallback: [0.21, 1.12, -0.02],
+    scale: [0.055, 0.075, 0.05],
+    color: '#a855f7',
+    emissive: '#7e22ce',
+  },
+  {
+    id: 'appendix',
+    labelZh: '盲腸／闌尾',
+    posGlb: [-0.15, 0.91, -0.02],
+    posFallback: [-0.16, 0.69, 0.07],
+    scale: [0.048, 0.07, 0.048],
+    color: '#fb923c',
+    emissive: '#ea580c',
+  },
+  {
+    id: 'kidney_r',
+    labelZh: '右腎',
+    posGlb: [-0.12, 1.17, -0.22],
+    posFallback: [-0.13, 0.96, -0.08],
+    scale: [0.048, 0.075, 0.04],
+    color: '#ec4899',
+    emissive: '#be185d',
+  },
+  {
+    id: 'kidney_l',
+    labelZh: '左腎',
+    posGlb: [0.12, 1.17, -0.22],
+    posFallback: [0.13, 0.96, -0.08],
+    scale: [0.048, 0.075, 0.04],
+    color: '#ec4899',
+    emissive: '#be185d',
+  },
+  {
+    id: 'bladder',
+    labelZh: '膀胱',
+    posGlb: [0, 0.65, -0.05],
+    posFallback: [0, 0.44, 0.08],
+    scale: [0.075, 0.065, 0.065],
+    color: '#f43f5e',
+    emissive: '#e11d48',
+  },
+];
+
+function TranslucentOrgansReferenceLayer({
+  usingFallback,
+  hideHtmlLabels,
+}: {
+  usingFallback: boolean;
+  hideHtmlLabels: boolean;
+}) {
+  return (
+    <group>
+      {INTERNAL_ORGAN_REFS.map((org) => {
+        const pos = usingFallback ? org.posFallback : org.posGlb;
+        return (
+          <group key={org.id} position={pos} rotation={org.rot || [0, 0, 0]}>
+            <mesh scale={org.scale} raycast={() => null}>
+              <sphereGeometry args={[1, 16, 12]} />
+              <meshPhysicalMaterial
+                color={org.color}
+                emissive={org.emissive}
+                emissiveIntensity={0.45}
+                transparent
+                opacity={0.42}
+                roughness={0.25}
+                depthWrite={false}
+              />
+            </mesh>
+            {/* 微小發光定位點 */}
+            <mesh raycast={() => null}>
+              <sphereGeometry args={[0.016, 10, 8]} />
+              <meshBasicMaterial color="#ffffff" transparent opacity={0.92} />
+            </mesh>
+            {!hideHtmlLabels && org.id !== 'gallbladder' && (
+              <Html
+                position={[0, 0, org.scale[2] + 0.02]}
+                center
+                distanceFactor={4.8}
+                zIndexRange={[8, 0]}
+                style={{ pointerEvents: 'none' }}
+              >
+                <span className="px-1.5 py-0.5 rounded bg-slate-950/80 border border-slate-700/80 text-[9px] font-bold text-slate-200 whitespace-nowrap shadow">
+                  {org.labelZh}
+                </span>
+              </Html>
+            )}
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
 const SHARED_BOUNDARY_EDGES_GEO = new THREE.EdgesGeometry(
-  new THREE.SphereGeometry(1, 14, 10),
-  15
+  new THREE.SphereGeometry(1, 16, 12),
+  12
 );
 
 function InvisibleHitboxGlowNode({
@@ -717,9 +1025,10 @@ function InvisibleHitboxGlowNode({
   onHover: (id: BodyRegionId | null) => void;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const coord = (usingFallback ? HITBOX_COORDS_FALLBACK : HITBOX_COORDS_BUNDLED_GLB)[
-    region.id as BodyRegionId
-  ];
+  const coord = (
+    usingFallback ? HITBOX_COORDS_FALLBACK : HITBOX_COORDS_BUNDLED_GLB
+  )[region.id as BodyRegionId];
+  const groupHex = BODY_GROUP_THEME[region.group]?.hex || '#06b6d4';
   const isIlluminated = isSelected || isActive || isHovered || debugHitbox;
 
   useFrame(({ clock }) => {
@@ -728,21 +1037,21 @@ function InvisibleHitboxGlowNode({
     if (!mat) return;
 
     if (isSelected) {
-      const pulse = 0.65 + Math.sin(clock.getElapsedTime() * 4.0) * 0.22;
+      const pulse = 0.72 + Math.sin(clock.getElapsedTime() * 4.2) * 0.25;
       mat.emissiveIntensity = pulse;
-      mat.opacity = 0.44;
+      mat.opacity = 0.48;
     } else if (isActive) {
-      mat.emissiveIntensity = 0.75;
-      mat.opacity = 0.4;
+      mat.emissiveIntensity = 0.85;
+      mat.opacity = 0.44;
     } else if (isHovered) {
-      mat.emissiveIntensity = 0.6;
-      mat.opacity = 0.34;
+      mat.emissiveIntensity = 0.7;
+      mat.opacity = 0.38;
     } else if (debugHitbox) {
       mat.emissiveIntensity = 0.45;
       mat.opacity = 0.38;
     } else if (showRegionBoundaries) {
-      mat.emissiveIntensity = 0.14;
-      mat.opacity = 0.085;
+      mat.emissiveIntensity = 0.24;
+      mat.opacity = 0.15;
     } else {
       mat.emissiveIntensity = 0;
       mat.opacity = 0.015;
@@ -751,28 +1060,19 @@ function InvisibleHitboxGlowNode({
 
   const glowColor = useMemo(() => {
     if (isSelected) return '#f43f5e';
-    if (isActive) return '#22d3ee';
-    if (isHovered) return '#38bdf8';
-    if (debugHitbox || showRegionBoundaries) {
-      return region.meshConfig.colorAccent || '#38bdf8';
-    }
+    if (isActive) return '#ffffff';
+    if (isHovered) return groupHex;
+    if (debugHitbox || showRegionBoundaries) return groupHex;
     return '#0f172a';
-  }, [
-    isSelected,
-    isActive,
-    isHovered,
-    debugHitbox,
-    showRegionBoundaries,
-    region.meshConfig.colorAccent,
-  ]);
+  }, [isSelected, isActive, isHovered, debugHitbox, showRegionBoundaries, groupHex]);
 
   const outlineColor = isSelected
-    ? '#fb7185'
-    : isActive || isHovered
-    ? '#22d3ee'
-    : region.meshConfig.colorAccent || '#38bdf8';
+    ? '#fda4af'
+    : isActive
+    ? '#ffffff'
+    : groupHex;
 
-  const outlineOpacity = isSelected || isActive || isHovered ? 0.88 : 0.28;
+  const outlineOpacity = isSelected || isActive || isHovered ? 0.96 : 0.62;
 
   if (!coord) return null;
 
@@ -807,27 +1107,29 @@ function InvisibleHitboxGlowNode({
         <meshPhysicalMaterial
           color={glowColor}
           emissive={glowColor}
-          emissiveIntensity={isIlluminated ? 0.6 : showRegionBoundaries ? 0.14 : 0}
+          emissiveIntensity={
+            isIlluminated ? 0.72 : showRegionBoundaries ? 0.24 : 0
+          }
           roughness={0.2}
           metalness={0.1}
           transparent
           opacity={
-            isIlluminated ? 0.38 : showRegionBoundaries ? 0.085 : 0.015
+            isIlluminated ? 0.42 : showRegionBoundaries ? 0.15 : 0.015
           }
           depthWrite={false}
           wireframe={debugHitbox && !isSelected && !isActive && !isHovered}
         />
       </mesh>
 
-      {/* 解剖分區細邊框輪廓 (EdgesGeometry Outline) */}
+      {/* 高辨識度解剖分區細邊框輪廓 (依五大主題專屬配色) */}
       {(showRegionBoundaries || isSelected || isActive || isHovered) &&
         !debugHitbox && (
           <lineSegments
             geometry={SHARED_BOUNDARY_EDGES_GEO}
             scale={[
-              coord.radii[0] * 1.01,
-              coord.radii[1] * 1.01,
-              coord.radii[2] * 1.01,
+              coord.radii[0] * 1.012,
+              coord.radii[1] * 1.012,
+              coord.radii[2] * 1.012,
             ]}
           >
             <lineBasicMaterial
@@ -844,17 +1146,17 @@ function InvisibleHitboxGlowNode({
         <Html
           position={[0, 0, 0.25]}
           center
-          distanceFactor={5.8}
+          distanceFactor={5.4}
           zIndexRange={[10, 0]}
           style={{ pointerEvents: 'none' }}
         >
           <div
             className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap shadow-xl border backdrop-blur-md flex items-center gap-1.5 transition-all ${
               isSelected
-                ? 'bg-rose-950/95 text-rose-100 border-rose-500/70'
+                ? 'bg-rose-950/95 text-rose-100 border-rose-400 shadow-rose-950/70'
                 : isActive
-                ? 'bg-cyan-950/95 text-cyan-100 border-cyan-400/80'
-                : 'bg-slate-900/95 text-slate-100 border-slate-700'
+                ? 'bg-cyan-950/95 text-cyan-100 border-cyan-400/90'
+                : 'bg-slate-900/95 text-slate-100 border-slate-600'
             }`}
           >
             <span>{region.shortNameZh}</span>
@@ -873,6 +1175,8 @@ function InvisibleHitboxGlowNode({
 export function AnatomicalHumanModel3D({
   debugHitbox = false,
   showRegionBoundaries = true,
+  showOrganXray = false,
+  modelGender = 'male',
   hideHtmlLabels = false,
   yOffset = 0,
   scaleMultiplier = 1,
@@ -896,7 +1200,6 @@ export function AnatomicalHumanModel3D({
     (status) => {
       if (!status.isLoading) {
         setUsingFallback(status.usingFallback);
-        // 延遲一個 frame 確保 primitive 或 fallback mesh 已掛載，再計算實際 THREE.Box3 邊界
         requestAnimationFrame(() => {
           if (rootGroupRef.current && onBoundsComputed) {
             rootGroupRef.current.updateMatrixWorld(true);
@@ -932,14 +1235,24 @@ export function AnatomicalHumanModel3D({
 
   return (
     <group ref={rootGroupRef} position={[0, -0.48, 0]}>
-      {/* 第一層：支援外部 .glb + DRACO + 自動 Box3 正規化 + Fresnel 輪廓光外殼之單一視覺模型層 */}
+      {/* 第一層：支援男女雙模與 .glb + DRACO + Fresnel 輪廓光之視覺模型層 */}
       <UnifiedVisualBodyMeshLayer
         yOffset={yOffset}
         scaleMultiplier={scaleMultiplier}
+        modelGender={modelGender}
+        showOrganXray={showOrganXray}
         onModelStatusChange={handleModelStatusChange}
       />
 
-      {/* 第二層：依前後視角過濾之解剖感應熱區與分區邊界可視化層 */}
+      {/* 深層內臟半透明參考層 (開啟透視模式時顯示) */}
+      {showOrganXray && (
+        <TranslucentOrgansReferenceLayer
+          usingFallback={usingFallback}
+          hideHtmlLabels={hideHtmlLabels}
+        />
+      )}
+
+      {/* 第二層：依前後視角與五大主題分色過濾之解剖感應熱區層 */}
       {visibleRegions.map((region) => {
         const rId = region.id as BodyRegionId;
         const record = selectedRegions[rId];
