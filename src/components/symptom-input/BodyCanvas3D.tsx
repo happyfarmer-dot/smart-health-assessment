@@ -23,8 +23,8 @@ import {
   AnatomicalHumanModel3D,
   ModelBoundsInfo,
   ModelGenderVariant,
-  getRegionWorldCenter,
 } from './AnatomicalHumanModel3D';
+import { getCanonicalRegionWorldCenter } from '@/lib/bodyRegionSurfaceMap';
 import {
   CameraFocusPreset,
   useDiagnosisStore,
@@ -49,11 +49,13 @@ const FIVE_THEME_LEGEND = [
 
 function CameraController({
   bounds,
-  usingFallback,
+  flipCommandSeq,
+  presetCommandSeq,
   zoomCommand,
 }: {
   bounds: ModelBoundsInfo;
-  usingFallback: boolean;
+  flipCommandSeq: number;
+  presetCommandSeq: number;
   zoomCommand: { seq: number; factor: number };
 }) {
   const {
@@ -61,9 +63,15 @@ function CameraController({
     cameraFocusPreset,
     cameraResetCount,
     activeRegionId,
+    setCameraOrientation,
   } = useDiagnosisStore();
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const { camera, size } = useThree();
+  const orientationRef = useRef(cameraOrientation);
+
+  useEffect(() => {
+    orientationRef.current = cameraOrientation;
+  }, [cameraOrientation]);
 
   const animRef = useRef<{
     active: boolean;
@@ -75,30 +83,29 @@ function CameraController({
     goalTarget: new THREE.Vector3(0, 0.03, 0),
   });
 
-  // 1. 視角預設 (全身 / 頭頸五官 / 胸腹軀幹 / 骨盆下肢) 與正背面翻轉動態對焦
+  // 1. 一鍵區域聚焦 (全身 / 頭頸五官 / 胸腹軀幹 / 骨盆下肢)：強制切回正面最佳視角，且不受手動旋轉狀態影響
   useEffect(() => {
-    const sign = cameraOrientation === 'anterior' ? 1 : -1;
     if (cameraFocusPreset === 'head_neck') {
       animRef.current = {
         active: true,
-        goalTarget: new THREE.Vector3(0, 1.85, -0.06),
-        goalPos: new THREE.Vector3(0, 1.9, sign * 1.45),
+        goalTarget: new THREE.Vector3(0, 1.85, 0.02),
+        goalPos: new THREE.Vector3(0, 1.88, 1.32),
       };
       return;
     }
     if (cameraFocusPreset === 'chest_abdomen') {
       animRef.current = {
         active: true,
-        goalTarget: new THREE.Vector3(0, 0.8, -0.05),
-        goalPos: new THREE.Vector3(0, 0.88, sign * 2.25),
+        goalTarget: new THREE.Vector3(0, 0.78, 0.02),
+        goalPos: new THREE.Vector3(0, 0.85, 2.25),
       };
       return;
     }
     if (cameraFocusPreset === 'pelvis_legs') {
       animRef.current = {
         active: true,
-        goalTarget: new THREE.Vector3(0, -0.82, -0.08),
-        goalPos: new THREE.Vector3(0, -0.74, sign * 3.1),
+        goalTarget: new THREE.Vector3(0, -0.82, 0.0),
+        goalPos: new THREE.Vector3(0, -0.74, 3.1),
       };
       return;
     }
@@ -114,11 +121,11 @@ function CameraController({
     animRef.current = {
       active: true,
       goalTarget: new THREE.Vector3(0, bounds.centerY, 0),
-      goalPos: new THREE.Vector3(0, bounds.centerY + 0.06, sign * dist),
+      goalPos: new THREE.Vector3(0, bounds.centerY + 0.06, dist),
     };
   }, [
-    cameraOrientation,
     cameraFocusPreset,
+    presetCommandSeq,
     cameraResetCount,
     bounds.centerY,
     bounds.height,
@@ -127,17 +134,41 @@ function CameraController({
     size.height,
   ]);
 
-  // 2. 動態焦點追蹤：點選或聚焦特定部位時，平滑移動 OrbitControls.target 至該部位中心
+  // 1b. 明確點擊「轉背面 / 轉正面」按鈕時才平滑旋轉 180 度
+  useEffect(() => {
+    if (flipCommandSeq === 0 || !controlsRef.current) return;
+    const target = animRef.current.active
+      ? animRef.current.goalTarget.clone()
+      : controlsRef.current.target.clone();
+    const pos = animRef.current.active
+      ? animRef.current.goalPos.clone()
+      : camera.position.clone();
+    const offset = pos.sub(target);
+    const horizDist = Math.max(0.45, Math.hypot(offset.x, offset.z));
+    const nextSign = orientationRef.current === 'anterior' ? -1 : 1;
+
+    animRef.current = {
+      active: true,
+      goalTarget: target,
+      goalPos: new THREE.Vector3(
+        target.x,
+        target.y + offset.y,
+        target.z + nextSign * horizDist
+      ),
+    };
+  }, [flipCommandSeq, camera]);
+
+  // 2. 動態焦點追蹤：點選特定部位時，平滑移動 OrbitControls.target 至該部位中心
   useEffect(() => {
     if (!activeRegionId || !controlsRef.current) return;
-    const center = getRegionWorldCenter(activeRegionId, usingFallback);
+    const center = getCanonicalRegionWorldCenter(activeRegionId);
     if (!center) return;
 
     const targetVec = new THREE.Vector3(center[0], center[1], center[2]);
     const currentOffset = camera.position
       .clone()
       .sub(controlsRef.current.target);
-    const clampedLen = Math.max(0.45, Math.min(currentOffset.length(), 4.2));
+    const clampedLen = Math.max(0.55, Math.min(currentOffset.length(), 4.2));
     currentOffset.normalize().multiplyScalar(clampedLen);
 
     animRef.current = {
@@ -145,7 +176,7 @@ function CameraController({
       goalTarget: targetVec,
       goalPos: targetVec.clone().add(currentOffset),
     };
-  }, [activeRegionId, usingFallback, camera]);
+  }, [activeRegionId, camera]);
 
   // 3. 快捷「＋ 放大 / － 縮小」按鈕平滑縮放（保持對準當前目標焦點）
   useEffect(() => {
@@ -171,20 +202,38 @@ function CameraController({
   }, [zoomCommand, camera]);
 
   useFrame((_, delta) => {
-    if (!animRef.current.active || !controlsRef.current) return;
-    const alpha = Math.min(1, delta * 7.5);
-    camera.position.lerp(animRef.current.goalPos, alpha);
-    controlsRef.current.target.lerp(animRef.current.goalTarget, alpha);
-    controlsRef.current.update();
+    if (!controlsRef.current) return;
 
-    if (
-      camera.position.distanceTo(animRef.current.goalPos) < 0.012 &&
-      controlsRef.current.target.distanceTo(animRef.current.goalTarget) < 0.012
-    ) {
-      camera.position.copy(animRef.current.goalPos);
-      controlsRef.current.target.copy(animRef.current.goalTarget);
+    if (animRef.current.active) {
+      const alpha = Math.min(1, delta * 7.5);
+      camera.position.lerp(animRef.current.goalPos, alpha);
+      controlsRef.current.target.lerp(animRef.current.goalTarget, alpha);
       controlsRef.current.update();
-      animRef.current.active = false;
+
+      if (
+        camera.position.distanceTo(animRef.current.goalPos) < 0.012 &&
+        controlsRef.current.target.distanceTo(animRef.current.goalTarget) < 0.012
+      ) {
+        camera.position.copy(animRef.current.goalPos);
+        controlsRef.current.target.copy(animRef.current.goalTarget);
+        controlsRef.current.update();
+        animRef.current.active = false;
+      }
+    }
+
+    // 即時依攝影機真實空間方位同步正背面標籤，不會觸發鏡頭回彈
+    const dx = camera.position.x - controlsRef.current.target.x;
+    const dz = camera.position.z - controlsRef.current.target.z;
+    const horiz = Math.hypot(dx, dz);
+    if (horiz > 0.05) {
+      const cosFront = dz / horiz;
+      if (cosFront > 0.12 && orientationRef.current !== 'anterior') {
+        orientationRef.current = 'anterior';
+        setCameraOrientation('anterior');
+      } else if (cosFront < -0.12 && orientationRef.current !== 'posterior') {
+        orientationRef.current = 'posterior';
+        setCameraOrientation('posterior');
+      }
     }
   });
 
@@ -247,7 +296,7 @@ export function BodyCanvas3D({
     contextProfile,
     cameraOrientation,
     cameraFocusPreset,
-    toggleCameraOrientation,
+    setCameraOrientation,
     setCameraFocusPreset,
     triggerCameraReset,
     activeRegionId,
@@ -264,6 +313,8 @@ export function BodyCanvas3D({
   const [genderOverride, setGenderOverride] = useState<
     'auto' | ModelGenderVariant
   >('auto');
+  const [flipCommandSeq, setFlipCommandSeq] = useState(0);
+  const [presetCommandSeq, setPresetCommandSeq] = useState(0);
   const [zoomCommand, setZoomCommand] = useState<{
     seq: number;
     factor: number;
@@ -280,7 +331,7 @@ export function BodyCanvas3D({
     isLoading: boolean;
     progressPct: number;
     usingFallback: boolean;
-    resolvedVariant?: 'male' | 'female' | 'default' | 'fallback';
+    resolvedVariant?: 'male' | 'female' | 'default' | 'male_morphed' | 'fallback';
   }>({
     isLoading: false,
     progressPct: 100,
@@ -332,7 +383,11 @@ export function BodyCanvas3D({
                 <button
                   key={preset.id}
                   type="button"
-                  onClick={() => setCameraFocusPreset(preset.id)}
+                  onClick={() => {
+                    setCameraFocusPreset(preset.id);
+                    setCameraOrientation('anterior');
+                    setPresetCommandSeq((s) => s + 1);
+                  }}
                   className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
                     active
                       ? 'bg-cyan-500 text-slate-950 shadow-sm'
@@ -396,7 +451,7 @@ export function BodyCanvas3D({
             {/* 正背面翻轉 */}
             <button
               type="button"
-              onClick={toggleCameraOrientation}
+              onClick={() => setFlipCommandSeq((s) => s + 1)}
               className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-bold bg-cyan-600 hover:bg-cyan-500 text-slate-950 shadow-md transition-all cursor-pointer"
             >
               <FlipHorizontal2 className="w-3.5 h-3.5" />
@@ -405,7 +460,11 @@ export function BodyCanvas3D({
 
             <button
               type="button"
-              onClick={triggerCameraReset}
+              onClick={() => {
+                setCameraFocusPreset('full_body');
+                setCameraOrientation('anterior');
+                triggerCameraReset();
+              }}
               className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-medium bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-700 transition-all cursor-pointer"
               title="重置全身視角"
             >
@@ -552,8 +611,10 @@ export function BodyCanvas3D({
         <div className="pointer-events-none absolute bottom-2 right-3 z-10">
           <span className="text-[10px] text-slate-500/80">
             3D Model: MakeHuman base mesh (CC0)
+            {modelStatus.resolvedVariant === 'male_morphed' &&
+              '・男性解剖變形模式（放入 human_body_male.glb 可替換獨立模型）'}
             {modelStatus.resolvedVariant === 'default' &&
-              '・男女雙模共用標準底模'}
+              '・標準女性體態'}
           </span>
         </div>
 
@@ -615,7 +676,8 @@ export function BodyCanvas3D({
               />
               <CameraController
                 bounds={modelBounds}
-                usingFallback={modelStatus.usingFallback}
+                flipCommandSeq={flipCommandSeq}
+                presetCommandSeq={presetCommandSeq}
                 zoomCommand={zoomCommand}
               />
             </Canvas>
