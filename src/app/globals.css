@@ -24,23 +24,44 @@ body {
   background: #475569;
 }
 
-/* 臨床評估報告書列印／另存 PDF 專用白底黑字樣式 */
+/* 臨床評估報告書與看診小抄列印／另存 PDF 專用白底黑字樣式 */
 @media print {
   @page {
-    size: A4;
-    margin: 14mm 12mm;
+    size: A4 portrait;
+    margin: 12mm;
   }
 
   html,
   body {
     background: #ffffff !important;
-    color: #111827 !important;
+    color: #000000 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
   .no-print {
     display: none !important;
+  }
+
+  body.cheat-sheet-open .cheat-sheet-hide-on-print {
+    display: none !important;
+  }
+
+  .print-cheat-sheet,
+  .print-cheat-sheet * {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+  }
+
+  .print-cheat-sheet .avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-cheat-sheet .page-break-before {
+    break-before: page;
+    page-break-before: always;
   }
 
   .print-dossier,

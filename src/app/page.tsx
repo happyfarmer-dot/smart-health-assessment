@@ -13,6 +13,7 @@ import {
   ChevronUp,
   X,
   FileText,
+  Printer,
 } from 'lucide-react';
 import { TopApiControlBar } from '@/components/layout/TopApiControlBar';
 import { ContextProfileCard } from '@/components/layout/ContextProfileCard';
@@ -23,6 +24,7 @@ import { SystemicSymptomsAccordion } from '@/components/symptom-input/SystemicSy
 import { TwoStageFollowUpModal } from '@/components/diagnosis/TwoStageFollowUpModal';
 import { DiagnosisStreamReport } from '@/components/diagnosis/DiagnosisStreamReport';
 import { ReportExportModal } from '@/components/diagnosis/ReportExportModal';
+import { DoctorCheatSheetModal } from '@/components/diagnosis/DoctorCheatSheetModal';
 import { useDiagnosisStore } from '@/store/useDiagnosisStore';
 import { DEPTH_LAYER_CONFIG } from '@/data/discomfortQualities';
 import { SYSTEMIC_SYMPTOM_MAP } from '@/data/systemicSymptomsCatalog';
@@ -77,6 +79,7 @@ export default function ClinicalDiagnosisWorkbenchPage() {
   const [assessedAt, setAssessedAt] = useState<string>('');
   const [isSummaryDrawerOpen, setIsSummaryDrawerOpen] = useState(false);
   const [isReportExportOpen, setIsReportExportOpen] = useState(false);
+  const [isCheatSheetOpen, setIsCheatSheetOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [safetyResult, setSafetyResult] = useState<SafetyCheckResult | null>(null);
   const [primaryResult, setPrimaryResult] = useState<PrimaryDiagnosisResult | null>(null);
@@ -232,18 +235,29 @@ export default function ClinicalDiagnosisWorkbenchPage() {
               <span>返回修改症狀</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsReportExportOpen(true)}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-sky-400 hover:from-cyan-300 hover:to-sky-300 text-slate-950 px-4 py-2 text-xs sm:text-sm font-black shadow-lg shadow-cyan-950/50 transition-all cursor-pointer"
-            >
-              <FileText className="w-4 h-4" />
-              <span>一鍵生成報告</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsCheatSheetOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/50 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-200 px-3 py-2 text-xs sm:text-sm font-bold transition-colors cursor-pointer"
+              >
+                <Printer className="w-4 h-4 text-emerald-400" />
+                <span>列印看診小抄（給醫師）</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsReportExportOpen(true)}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-sky-400 hover:from-cyan-300 hover:to-sky-300 text-slate-950 px-4 py-2 text-xs sm:text-sm font-black shadow-lg shadow-cyan-950/50 transition-all cursor-pointer"
+              >
+                <FileText className="w-4 h-4" />
+                <span>一鍵生成報告</span>
+              </button>
+            </div>
           </div>
         </nav>
 
-        <main className="max-w-5xl mx-auto px-3.5 sm:px-6 py-5 sm:py-7 space-y-5 pb-16">
+        <main className="cheat-sheet-hide-on-print max-w-5xl mx-auto px-3.5 sm:px-6 py-5 sm:py-7 space-y-5 pb-16">
           {apiExecutionError && (
             <div className="rounded-2xl border border-rose-500/60 bg-rose-950/50 p-4 sm:p-5 text-rose-100 shadow-xl space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
@@ -329,6 +343,15 @@ export default function ClinicalDiagnosisWorkbenchPage() {
           differentialResult={differentialResult}
           pubmedResult={pubmedResult}
         />
+
+        <DoctorCheatSheetModal
+          isOpen={isCheatSheetOpen}
+          onClose={() => setIsCheatSheetOpen(false)}
+          assessedAt={assessedAt}
+          dynamicAnswers={lastDiagnosisPayloadRef.current?.dynamicAnswers?.answers}
+          attachments={lastDiagnosisPayloadRef.current?.attachments}
+          primaryResult={primaryResult}
+        />
       </>
     );
   }
@@ -336,7 +359,7 @@ export default function ClinicalDiagnosisWorkbenchPage() {
   // ==================== 主臨床輸入工作台 (Input Workbench View) ====================
   return (
     <>
-      <main className="max-w-7xl mx-auto px-3.5 sm:px-4 pt-3 pb-32 space-y-3.5">
+      <main className="cheat-sheet-hide-on-print max-w-7xl mx-auto px-3.5 sm:px-4 pt-3 pb-32 space-y-3.5">
         {/* 單行精簡 API 連線狀態列（點擊右側按鈕以 Modal 展開設定） */}
         <TopApiControlBar />
 
@@ -639,8 +662,8 @@ export default function ClinicalDiagnosisWorkbenchPage() {
       )}
 
       {/* 底部固定懸浮操作列 (Sticky Bottom Action Bar) */}
-      <div className="fixed bottom-0 inset-x-0 z-40 border-t border-slate-800 bg-slate-950/95 backdrop-blur-md shadow-[0_-8px_30px_rgba(2,6,23,0.85)]">
-        <div className="max-w-7xl mx-auto px-3.5 sm:px-4 py-2.5 flex items-center justify-between gap-3">
+      <div className="cheat-sheet-hide-on-print fixed bottom-0 inset-x-0 z-40 border-t border-slate-800 bg-slate-950/95 backdrop-blur-md shadow-[0_-8px_30px_rgba(2,6,23,0.85)]">
+        <div className="max-w-7xl mx-auto px-3.5 sm:px-4 py-2.5 flex items-center justify-between gap-2 sm:gap-3">
           <button
             type="button"
             onClick={() => setIsSummaryDrawerOpen((prev) => !prev)}
@@ -661,21 +684,46 @@ export default function ClinicalDiagnosisWorkbenchPage() {
             </div>
           </button>
 
-          <button
-            type="button"
-            disabled={totalSelections === 0}
-            onClick={() => setFollowUpModalOpen(true)}
-            className={`px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 transition-all shadow-lg shrink-0 ${
-              totalSelections > 0
-                ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-cyan-950/60 cursor-pointer'
-                : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
-            }`}
-          >
-            <span>開始臨床鑑別診斷</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={totalSelections === 0}
+              onClick={() => setIsCheatSheetOpen(true)}
+              className={`px-3 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 border transition-all ${
+                totalSelections > 0
+                  ? 'border-emerald-500/50 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-200 cursor-pointer'
+                  : 'border-slate-800 bg-slate-900 text-slate-500 cursor-not-allowed'
+              }`}
+              title="免 API 直接輸出給醫師看的 A4 看診小抄"
+            >
+              <Printer className="w-4 h-4 text-emerald-400" />
+              <span>看診小抄</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={totalSelections === 0}
+              onClick={() => setFollowUpModalOpen(true)}
+              className={`px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 transition-all shadow-lg shrink-0 ${
+                totalSelections > 0
+                  ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-cyan-950/60 cursor-pointer'
+                  : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+              }`}
+            >
+              <span>開始臨床鑑別診斷</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
+
+      <DoctorCheatSheetModal
+        isOpen={isCheatSheetOpen}
+        onClose={() => setIsCheatSheetOpen(false)}
+        dynamicAnswers={lastDiagnosisPayloadRef.current?.dynamicAnswers?.answers}
+        attachments={lastDiagnosisPayloadRef.current?.attachments}
+        primaryResult={primaryResult}
+      />
     </>
   );
 }
