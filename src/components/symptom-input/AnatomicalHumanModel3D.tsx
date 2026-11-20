@@ -147,10 +147,10 @@ function createFresnelRimShaderMaterial(): THREE.ShaderMaterial {
 }
 
 /**
- * 表面貼合 32 解剖分區著色器 (Per-Fragment Surface-Conforming Shader)
- * - 100% 貼合人體皮膚網格（僅沿法線外推 0.0024 避免 Z-fighting）
- * - 逐像素依正規化座標 (nx, ny, nz) 與表面法線 normal.z 判定所屬分區
- * - 繪製清晰交界邊線、五大主題配色、Hover 發光與已選中部位脈動警示色
+ * 全息醫療表面著色器 (Holographic Surface-Conforming Glow Shader)
+ * - 待機狀態：完全透明（無五彩平塗與粗白邊框），完整透出醫療冷灰銀磨砂立體素體或真實肌肉貼圖
+ * - Hover / 鎖定預覽 / 已選部位：透過 smoothstep 產生柔和羽化徑向光暈（Soft Radial Glow）
+ * - 可選「輔助線」（預設關閉）：僅於軀幹與四肢顯示極細冷青色掃描分界線 (opacity <= 0.14)，臉部一律保持乾淨
  */
 function createSurfaceRegionOverlayMaterial(): THREE.ShaderMaterial {
   const emptyMask = new Array<number>(32).fill(0);
@@ -158,7 +158,7 @@ function createSurfaceRegionOverlayMaterial(): THREE.ShaderMaterial {
     uniforms: {
       uInvRootMatrix: { value: new THREE.Matrix4() },
       uTime: { value: 0 },
-      uShowRegions: { value: 1.0 },
+      uShowRegions: { value: 0.0 }, // 預設關閉輔助線
       uShowXray: { value: 0.0 },
       uHoveredIdx: { value: -1.0 },
       uActiveIdx: { value: -1.0 },
@@ -173,7 +173,7 @@ function createSurfaceRegionOverlayMaterial(): THREE.ShaderMaterial {
       varying vec3 vViewDir;
 
       void main() {
-        vec3 pushedPos = position + normal * 0.0024;
+        vec3 pushedPos = position + normal * 0.0022;
         vec4 worldPos = modelMatrix * vec4(pushedPos, 1.0);
         vec3 canonPos = (uInvRootMatrix * worldPos).xyz;
 
@@ -206,14 +206,6 @@ function createSurfaceRegionOverlayMaterial(): THREE.ShaderMaterial {
 
       ${GLSL_REGION_CLASSIFIER_CHUNK}
 
-      vec3 getThemeColor(int themeId) {
-        if (themeId == 0) return vec3(0.024, 0.76, 0.88); // Cyan (#06b6d4) 頭頸五官
-        if (themeId == 1) return vec3(0.25, 0.55, 0.98);  // Blue (#3b82f6) 胸部上背
-        if (themeId == 2) return vec3(1.0, 0.72, 0.14);   // Bright Amber 腹部五區
-        if (themeId == 3) return vec3(0.96, 0.28, 0.42);  // Rose (#f43f5e) 下背骨盆臀會陰
-        return vec3(0.08, 0.76, 0.54);                    // Emerald (#10b981) 四肢關節
-      }
-
       void main() {
         int regionId = 0;
         int themeId = 0;
@@ -232,56 +224,69 @@ function createSurfaceRegionOverlayMaterial(): THREE.ShaderMaterial {
         }
         bool isSelected = selVal > 0.5;
 
-        if (uShowRegions < 0.5 && !isHovered && !isActive && !isSelected) {
+        bool isFaceOrHead = vNormCoord.y >= 0.825;
+        bool showScanline = (uShowRegions > 0.5) && !isFaceOrHead;
+
+        if (!showScanline && !isHovered && !isActive && !isSelected) {
           discard;
         }
 
-        vec3 themeCol = getThemeColor(themeId);
         float fresnel = pow(
           1.0 - max(dot(normalize(vWorldNormal), normalize(vViewDir)), 0.0),
-          2.0
+          1.9
         );
 
-        // 邊界細線厚度（頭頸五官更精細，軀幹四肢保持清晰分界）
-        float borderWidth = (vNormCoord.y > 0.825) ? 0.0021 : 0.0036;
-        float borderMask = 1.0 - smoothstep(borderWidth * 0.4, borderWidth, borderDist);
+        // 柔和羽化邊緣（越接近交界越柔順淡出，消除生硬方框線條）
+        float featherWidth = isFaceOrHead ? 0.0085 : 0.018;
+        float softRadial = smoothstep(0.0, featherWidth, borderDist);
 
-        vec3 baseFill = themeCol;
-        vec3 borderCol = mix(themeCol, vec3(0.96, 0.99, 1.0), 0.62);
-        float baseThemeAlpha = (themeId == 2) ? 0.30 : 0.23;
-        float fillAlpha = (uShowRegions > 0.5)
-          ? ((uShowXray > 0.5) ? 0.14 : baseThemeAlpha)
-          : 0.0;
-        float borderAlpha = (uShowRegions > 0.5)
-          ? ((uShowXray > 0.5) ? 0.45 : 0.78)
-          : 0.0;
+        vec3 finalCol = vec3(0.0);
+        float finalAlpha = 0.0;
 
+        // 1. 可選微細冷青色掃描輔助線（預設關閉，僅顯示於軀幹與四肢，opacity <= 0.14）
+        if (showScanline) {
+          float lineMask = 1.0 - smoothstep(0.0005, 0.0018, borderDist);
+          if (lineMask > 0.01) {
+            finalCol = vec3(0.22, 0.74, 0.97);
+            finalAlpha = lineMask * ((uShowXray > 0.5) ? 0.08 : 0.13);
+          }
+        }
+
+        // 2. 已標記症狀之部位：柔和珊瑚紅／琥珀紅呼吸光暈 (#f43f5e)
         if (isSelected) {
-          float pulse = 0.5 + 0.5 * sin(uTime * 3.8);
-          vec3 warnRed = vec3(0.96, 0.19, 0.34);
-          vec3 warnGlow = vec3(1.0, 0.58, 0.32);
-          baseFill = mix(warnRed, warnGlow, 0.25 * pulse + 0.35 * fresnel);
-          borderCol = vec3(1.0, 0.82, 0.86);
-          fillAlpha = 0.48 + 0.14 * pulse;
-          borderAlpha = 0.96;
+          float pulse = 0.5 + 0.5 * sin(uTime * 3.2);
+          vec3 coralRed = vec3(0.957, 0.247, 0.369);
+          vec3 warmAmber = vec3(0.98, 0.45, 0.28);
+          vec3 selCol = mix(coralRed, warmAmber, 0.28 * pulse + 0.22 * fresnel);
+          float selAlpha = (0.34 + 0.12 * pulse) * softRadial + 0.18 * fresnel;
+          if (selAlpha > finalAlpha) {
+            finalCol = selCol;
+            finalAlpha = selAlpha;
+          }
         }
 
-        if (isHovered || isActive) {
-          vec3 hiCol = mix(themeCol, vec3(0.88, 0.98, 1.0), 0.38);
-          baseFill = mix(hiCol, vec3(1.0), 0.45 * fresnel);
-          borderCol = vec3(1.0, 1.0, 1.0);
-          fillAlpha = max(fillAlpha, 0.48) + 0.16 * fresnel;
-          borderAlpha = 0.98;
+        // 3. 懸停（Hover）：淡冰藍色柔和微光
+        if (isHovered && !isActive) {
+          vec3 iceBlue = vec3(0.42, 0.85, 1.0);
+          float hovAlpha = 0.28 * softRadial + 0.20 * fresnel;
+          finalCol = mix(finalCol, iceBlue, 0.82);
+          finalAlpha = max(finalAlpha, hovAlpha);
         }
 
-        vec3 finalCol = mix(baseFill, borderCol, borderMask);
-        float finalAlpha = max(fillAlpha, borderMask * borderAlpha);
+        // 4. 第一下點擊鎖定預覽 (focusedRegionId)：清透亮青色羽化發光 (#22d3ee)
+        if (isActive) {
+          float lockPulse = 0.5 + 0.5 * sin(uTime * 3.6);
+          vec3 cyanGlow = vec3(0.133, 0.827, 0.933);
+          float actAlpha = (0.40 + 0.10 * lockPulse) * softRadial + 0.26 * fresnel;
+          finalCol = mix(cyanGlow, vec3(0.75, 0.98, 1.0), 0.32 * fresnel);
+          finalAlpha = max(finalAlpha, actAlpha);
+        }
 
-        if (finalAlpha < 0.01) {
+        if (finalAlpha < 0.008) {
           discard;
         }
 
-        gl_FragColor = vec4(finalCol, clamp(finalAlpha, 0.0, 0.94));
+        gl_FragColor = vec4(finalCol, clamp(finalAlpha, 0.0, 0.78));
       }
     `,
     transparent: true,
@@ -373,14 +378,19 @@ function applyXrayToGroup(group: THREE.Object3D, showOrganXray: boolean) {
   group.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
       const mesh = child as THREE.Mesh;
-      if (mesh.userData?.isBaseSkin && mesh.material instanceof THREE.MeshStandardMaterial) {
+      if (
+        mesh.userData?.isBaseSkin &&
+        (mesh.material instanceof THREE.MeshPhysicalMaterial ||
+          mesh.material instanceof THREE.MeshStandardMaterial)
+      ) {
         mesh.material.transparent = showOrganXray;
-        mesh.material.opacity = showOrganXray ? 0.24 : 1.0;
+        mesh.material.opacity = showOrganXray ? 0.18 : 1.0;
         mesh.material.depthWrite = !showOrganXray;
+        mesh.material.roughness = showOrganXray ? 0.25 : 0.38;
         mesh.material.needsUpdate = true;
       }
       if (mesh.userData?.isRimShell && mesh.material instanceof THREE.ShaderMaterial) {
-        mesh.material.uniforms.uIntensity.value = showOrganXray ? 0.36 : 0.72;
+        mesh.material.uniforms.uIntensity.value = showOrganXray ? 0.3 : 0.62;
       }
     }
   });
@@ -954,22 +964,35 @@ function AnatomicalBodyVisualBase({
           const uniformScale =
             size.y > 0.001 ? MODEL_TARGET_HEIGHT / size.y : 1;
 
-          const baseSkinMat = new THREE.MeshStandardMaterial({
-            color: '#9db4cc',
-            roughness: 0.54,
-            metalness: 0.14,
-            emissive: '#0c1f35',
-            emissiveIntensity: 0.2,
-            transparent: showOrganXray,
-            opacity: showOrganXray ? 0.24 : 1.0,
-            depthWrite: !showOrganXray,
-          });
-
           const baseMeshes: THREE.Mesh[] = [];
           rawScene.traverse((child) => {
             if ((child as THREE.Mesh).isMesh) {
               const mesh = child as THREE.Mesh;
-              mesh.material = baseSkinMat.clone();
+              const orig = Array.isArray(mesh.material)
+                ? mesh.material[0]
+                : mesh.material;
+              const stdOrig =
+                orig instanceof THREE.MeshStandardMaterial ? orig : null;
+
+              const physMat = new THREE.MeshPhysicalMaterial({
+                color: stdOrig?.map ? '#ffffff' : '#b8c7d9',
+                map: stdOrig?.map ?? null,
+                normalMap: stdOrig?.normalMap ?? null,
+                roughnessMap: stdOrig?.roughnessMap ?? null,
+                aoMap: stdOrig?.aoMap ?? null,
+                roughness: stdOrig?.map ? Math.min(0.55, stdOrig.roughness ?? 0.42) : 0.38,
+                metalness: 0.08,
+                clearcoat: 0.18,
+                clearcoatRoughness: 0.35,
+                envMapIntensity: 1.15,
+                emissive: '#09192c',
+                emissiveIntensity: 0.18,
+                transparent: showOrganXray,
+                opacity: showOrganXray ? 0.18 : 1.0,
+                depthWrite: !showOrganXray,
+              });
+
+              mesh.material = physMat;
               mesh.userData = { isBaseSkin: true };
               mesh.renderOrder = 1;
               mesh.castShadow = true;
@@ -1154,20 +1177,38 @@ function AnatomicalBodyVisualBase({
 
   const matteAnatomicalMaterial = useMemo(
     () =>
-      new THREE.MeshStandardMaterial({
-        color: '#9db4cc',
-        roughness: 0.56,
-        metalness: 0.12,
-        emissive: '#0c1f35',
-        emissiveIntensity: 0.2,
+      new THREE.MeshPhysicalMaterial({
+        color: '#b8c7d9',
+        roughness: 0.38,
+        metalness: 0.08,
+        clearcoat: 0.18,
+        clearcoatRoughness: 0.35,
+        envMapIntensity: 1.15,
+        emissive: '#09192c',
+        emissiveIntensity: 0.18,
         transparent: showOrganXray,
-        opacity: showOrganXray ? 0.24 : 1.0,
+        opacity: showOrganXray ? 0.18 : 1.0,
         depthWrite: !showOrganXray,
       }),
     [showOrganXray]
   );
 
   const fresnelMaterial = useMemo(() => createFresnelRimShaderMaterial(), []);
+
+  useEffect(() => {
+    return () => {
+      matteAnatomicalMaterial.dispose();
+    };
+  }, [matteAnatomicalMaterial]);
+
+  useEffect(() => {
+    return () => {
+      fresnelMaterial.dispose();
+      torsoHeadLatheGeo.dispose();
+      legLatheGeo.dispose();
+      armLatheGeo.dispose();
+    };
+  }, [fresnelMaterial, torsoHeadLatheGeo, legLatheGeo, armLatheGeo]);
 
   return (
     <group>
@@ -1297,11 +1338,122 @@ function AnatomicalBodyVisualBase({
   );
 }
 
+const HEAD_NECK_PIN_COORDS: Array<{
+  id: BodyRegionId;
+  pos: [number, number, number];
+}> = [
+  { id: 'head_cranial', pos: [0, 2.66, 0.06] },
+  { id: 'eye_orbital', pos: [0.088, 2.47, 0.25] },
+  { id: 'ear_auditory', pos: [-0.21, 2.42, 0.0] },
+  { id: 'nose_sinus', pos: [0, 2.44, 0.305] },
+  { id: 'oral_dental_jaw', pos: [0, 2.31, 0.26] },
+  { id: 'face_sensory', pos: [0.135, 2.40, 0.22] },
+  { id: 'neck_throat', pos: [0, 2.13, 0.145] },
+  { id: 'neck_cervical_thyroid', pos: [-0.095, 2.14, 0.04] },
+];
+
+function HeadNeckGlowingPins({
+  visible,
+  focusedRegionId,
+  hoveredRegionId,
+  selectedRegions,
+  onHover,
+  onSelectTap,
+}: {
+  visible: boolean;
+  focusedRegionId: BodyRegionId | null;
+  hoveredRegionId: BodyRegionId | null;
+  selectedRegions: Record<string, unknown>;
+  onHover: (id: BodyRegionId | null) => void;
+  onSelectTap: (id: BodyRegionId, e: ThreeEvent<MouseEvent>) => void;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
+
+  useFrame(({ clock }) => {
+    if (!visible || !groupRef.current) return;
+    const t = clock.getElapsedTime();
+    const pulse = 1.0 + 0.14 * Math.sin(t * 3.4);
+    groupRef.current.children.forEach((child, idx) => {
+      const id = HEAD_NECK_PIN_COORDS[idx]?.id;
+      const isFocused = id === focusedRegionId || id === hoveredRegionId;
+      const s = isFocused ? 1.38 * pulse : pulse;
+      child.scale.setScalar(s);
+    });
+  });
+
+  if (!visible) return null;
+
+  return (
+    <group ref={groupRef}>
+      {HEAD_NECK_PIN_COORDS.map((pin) => {
+        const isSel = Boolean(selectedRegions[pin.id]);
+        const isFoc = focusedRegionId === pin.id || hoveredRegionId === pin.id;
+        const coreColor = isSel ? '#fb7185' : isFoc ? '#67e8f9' : '#22d3ee';
+        const haloColor = isSel ? '#f43f5e' : '#38bdf8';
+
+        return (
+          <group
+            key={pin.id}
+            position={pin.pos}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              pointerDownRef.current = { x: e.clientX, y: e.clientY };
+            }}
+            onPointerOver={(e) => {
+              e.stopPropagation();
+              onHover(pin.id);
+              document.body.style.cursor = 'pointer';
+            }}
+            onPointerOut={(e) => {
+              e.stopPropagation();
+              onHover(null);
+              document.body.style.cursor = 'auto';
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (pointerDownRef.current) {
+                const dist = Math.hypot(
+                  e.clientX - pointerDownRef.current.x,
+                  e.clientY - pointerDownRef.current.y
+                );
+                if (dist > 6) return;
+              }
+              onSelectTap(pin.id, e);
+            }}
+          >
+            {/* 中心微光核心點 */}
+            <mesh renderOrder={6}>
+              <sphereGeometry args={[0.015, 14, 14]} />
+              <meshBasicMaterial
+                color={coreColor}
+                transparent
+                opacity={0.92}
+                depthTest={false}
+              />
+            </mesh>
+            {/* 外層半透明呼吸光環 */}
+            <mesh renderOrder={5} raycast={() => {}}>
+              <sphereGeometry args={[0.028, 14, 14]} />
+              <meshBasicMaterial
+                color={haloColor}
+                transparent
+                opacity={isFoc ? 0.42 : 0.24}
+                depthWrite={false}
+                depthTest={false}
+              />
+            </mesh>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
 export function AnatomicalHumanModel3D({
-  showRegionBoundaries = true,
+  showRegionBoundaries = false,
   showOrganXray = false,
   modelGender = 'female',
-  hideHtmlLabels = false,
   yOffset = 0,
   scaleMultiplier = 1,
   onModelStatusChange,
@@ -1312,6 +1464,7 @@ export function AnatomicalHumanModel3D({
     focusedRegionId,
     activeRegionId,
     hoveredRegionId,
+    cameraFocusPreset,
     setFocusedRegion,
     setActiveRegion,
     setHoveredRegion,
@@ -1323,6 +1476,8 @@ export function AnatomicalHumanModel3D({
   const tempLocalPos = useMemo(() => new THREE.Vector3(), []);
   const tempWorldNrm = useMemo(() => new THREE.Vector3(), []);
   const tempNormalMat = useMemo(() => new THREE.Matrix3(), []);
+  const headWorldRef = useMemo(() => new THREE.Vector3(0, 1.92, 0.15), []);
+  const [isHeadCloseUp, setIsHeadCloseUp] = useState(false);
 
   const surfaceOverlayMat = useMemo(
     () => createSurfaceRegionOverlayMaterial(),
@@ -1370,14 +1525,21 @@ export function AnatomicalHumanModel3D({
     selectedRegions,
   ]);
 
-  // 每幀更新模型逆矩陣與閃爍時間
-  useFrame(({ clock }) => {
+  // 每幀更新模型逆矩陣、閃爍時間與頭頸特寫感應
+  useFrame(({ clock, camera }) => {
     if (rootGroupRef.current) {
       rootGroupRef.current.updateWorldMatrix(true, false);
       invRootMatrix.copy(rootGroupRef.current.matrixWorld).invert();
       surfaceOverlayMat.uniforms.uInvRootMatrix.value.copy(invRootMatrix);
     }
     surfaceOverlayMat.uniforms.uTime.value = clock.getElapsedTime();
+
+    const distToHead = camera.position.distanceTo(headWorldRef);
+    const shouldShowPins =
+      cameraFocusPreset === 'head_neck' || distToHead < 2.25;
+    if (shouldShowPins !== isHeadCloseUp) {
+      setIsHeadCloseUp(shouldShowPins);
+    }
   });
 
   // 將 Raycast 撞擊點轉回正規化身體座標並呼叫完全一致的分區分類器
@@ -1402,6 +1564,14 @@ export function AnatomicalHumanModel3D({
     tempWorldNrm.applyMatrix3(tempNormalMat).normalize();
 
     return classifyBodyPointToRegion(nx, ny, nz, tempWorldNrm.z);
+  };
+
+  const triggerTwoStageTap = (regionId: BodyRegionId) => {
+    if (focusedRegionId === regionId) {
+      setActiveRegion(regionId);
+    } else {
+      setFocusedRegion(regionId);
+    }
   };
 
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
@@ -1438,27 +1608,8 @@ export function AnatomicalHumanModel3D({
     }
     const regionId = resolveEventRegionId(e);
     if (!regionId) return;
-
-    // 兩段式點擊：第一下鎖定預覽 (focusedRegionId)，再點同一部位才開啟編輯選單 (activeRegionId)
-    if (focusedRegionId === regionId) {
-      setActiveRegion(regionId);
-    } else {
-      setFocusedRegion(regionId);
-    }
+    triggerTwoStageTap(regionId);
   };
-
-  // Hover 時顯示浮動小標籤，若有已開啟彈窗則隱藏以免穿透遮擋
-  const labelRegionId: BodyRegionId | null =
-    hoveredRegionId || focusedRegionId || activeRegionId || null;
-  const labelRegion = labelRegionId ? BODY_REGION_MAP[labelRegionId] : null;
-  const rawLabelPos = labelRegionId
-    ? getCanonicalRegionWorldCenter(labelRegionId)
-    : ([0, 0, 0] as [number, number, number]);
-  const labelPosition: [number, number, number] = [
-    rawLabelPos[0],
-    rawLabelPos[1] + 0.48,
-    rawLabelPos[2],
-  ];
 
   return (
     <group
@@ -1480,26 +1631,14 @@ export function AnatomicalHumanModel3D({
 
       <TranslucentOrgansReferenceLayer visible={showOrganXray} />
 
-      {!hideHtmlLabels && labelRegion && (
-        <Html
-          position={labelPosition}
-          center
-          zIndexRange={[10, 0]}
-          style={{ pointerEvents: 'none' }}
-        >
-          <div className="whitespace-nowrap rounded-lg border border-cyan-400/70 bg-slate-950/92 px-2.5 py-1 text-[11px] font-bold text-white shadow-xl backdrop-blur-md flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-cyan-400" />
-            <span>{labelRegion.nameZh}</span>
-            {selectedRegions[labelRegion.id] && (
-              <span className="rounded bg-rose-600 px-1 py-0.5 text-[9px] text-white">
-                {selectedRegions[labelRegion.id].qualityIds.length +
-                  selectedRegions[labelRegion.id].specificSymptomIds.length}
-                項
-              </span>
-            )}
-          </div>
-        </Html>
-      )}
+      <HeadNeckGlowingPins
+        visible={isHeadCloseUp}
+        focusedRegionId={focusedRegionId}
+        hoveredRegionId={hoveredRegionId}
+        selectedRegions={selectedRegions}
+        onHover={setHoveredRegion}
+        onSelectTap={(id) => triggerTwoStageTap(id)}
+      />
     </group>
   );
 }
